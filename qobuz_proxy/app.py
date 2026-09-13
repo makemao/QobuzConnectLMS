@@ -52,6 +52,10 @@ def _configured_speaker_status(sc: SpeakerConfig, status: str) -> dict:
     elif sc.backend_type == "local":
         config_dict["audio_device"] = sc.audio_device
         config_dict["buffer_size"] = sc.audio_buffer_size
+    elif sc.backend_type == "lms":
+        config_dict["lms_host"] = sc.lms_host
+        config_dict["lms_port"] = sc.lms_port
+        config_dict["lms_player"] = sc.lms_player
     return {
         "id": slugify_name(sc.name),
         "name": sc.name,
@@ -191,7 +195,12 @@ class QobuzProxy:
             self._shutdown_event.set()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, handle_signal)
+            try:
+                loop.add_signal_handler(sig, handle_signal)
+            except NotImplementedError:
+                # Windows event loops have no signal handlers; Ctrl+C still
+                # interrupts asyncio.run().
+                pass
 
         try:
             await self.start()
@@ -424,6 +433,9 @@ class QobuzProxy:
             dlna_description_url=body.get("description_url", ""),
             audio_device=body.get("audio_device", "default"),
             audio_buffer_size=int(body.get("buffer_size", 2048)),
+            lms_host=body.get("lms_host", ""),
+            lms_port=int(body.get("lms_port", 9000)),
+            lms_player=body.get("lms_player", ""),
         )
 
         assert self._api_client is not None
@@ -501,6 +513,9 @@ class QobuzProxy:
             proxy_port=old_config.proxy_port,
             audio_device=body.get("audio_device", old_config.audio_device),
             audio_buffer_size=int(body.get("buffer_size", old_config.audio_buffer_size)),
+            lms_host=body.get("lms_host", old_config.lms_host),
+            lms_port=int(body.get("lms_port", old_config.lms_port)),
+            lms_player=body.get("lms_player", old_config.lms_player),
         )
 
         # Persist first: the edit is saved even if the restart below fails

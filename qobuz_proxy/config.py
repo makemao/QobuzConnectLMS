@@ -56,6 +56,10 @@ ENV_MAPPINGS = {
     # Local audio
     "QOBUZPROXY_AUDIO_DEVICE": ("backend", "local", "device"),
     "QOBUZPROXY_AUDIO_BUFFER_SIZE": ("backend", "local", "buffer_size"),
+    # Lyrion Music Server
+    "QOBUZPROXY_LMS_HOST": ("backend", "lms", "host"),
+    "QOBUZPROXY_LMS_PORT": ("backend", "lms", "port"),
+    "QOBUZPROXY_LMS_PLAYER": ("backend", "lms", "player"),
     # Server
     "QOBUZPROXY_HTTP_PORT": ("server", "http_port"),
     "QOBUZPROXY_PROXY_PORT": ("backend", "dlna", "proxy_port"),
@@ -112,12 +116,22 @@ class LocalConfig:
 
 
 @dataclass
+class LMSConfig:
+    """Lyrion Music Server backend configuration."""
+
+    host: str = ""
+    port: int = 9000
+    player: str = ""  # Player MAC address or name
+
+
+@dataclass
 class BackendConfig:
     """Audio backend configuration."""
 
     type: str = "dlna"
     dlna: DLNAConfig = field(default_factory=DLNAConfig)
     local: LocalConfig = field(default_factory=LocalConfig)
+    lms: LMSConfig = field(default_factory=LMSConfig)
 
 
 @dataclass
@@ -152,6 +166,9 @@ class SpeakerConfig:
     proxy_port: int = 0  # 0 = auto-assign
     audio_device: str = "default"
     audio_buffer_size: int = 2048
+    lms_host: str = ""
+    lms_port: int = 9000
+    lms_player: str = ""
 
 
 @dataclass
@@ -211,6 +228,13 @@ def validate_config(config: Config) -> None:
                 f"Invalid buffer_size: {config.backend.local.buffer_size}. "
                 f"Must be between 64 and 16384"
             )
+    elif config.backend.type == "lms":
+        if not config.backend.lms.host:
+            errors.append("LMS host is required when backend type is 'lms'")
+        if not config.backend.lms.player:
+            errors.append("LMS player (MAC or name) is required when backend type is 'lms'")
+        if not validate_port(config.backend.lms.port):
+            errors.append(f"Invalid LMS port: {config.backend.lms.port}")
     elif config.backend.type != "stub":
         errors.append(f"Unknown backend type: {config.backend.type}")
 
@@ -261,6 +285,10 @@ def speaker_config_to_dict(sc: SpeakerConfig) -> dict:
     elif sc.backend_type == "local":
         d["audio_device"] = sc.audio_device
         d["audio_buffer_size"] = sc.audio_buffer_size
+    elif sc.backend_type == "lms":
+        d["lms_host"] = sc.lms_host
+        d["lms_port"] = sc.lms_port
+        d["lms_player"] = sc.lms_player
     return d
 
 
@@ -280,6 +308,9 @@ def _single_speaker_from_config(config: Config) -> SpeakerConfig:
         proxy_port=config.backend.dlna.proxy_port,
         audio_device=config.backend.local.device,
         audio_buffer_size=config.backend.local.buffer_size,
+        lms_host=config.backend.lms.host,
+        lms_port=config.backend.lms.port,
+        lms_player=config.backend.lms.player,
     )
 
 
@@ -350,7 +381,9 @@ def _validate_speakers(speakers: list[SpeakerConfig]) -> None:
     for s in speakers:
         if s.backend_type == "dlna" and not s.dlna_ip:
             errors.append(f"Speaker '{s.name}': DLNA IP address is required")
-        if s.backend_type not in ("dlna", "local", "stub"):
+        if s.backend_type == "lms" and not (s.lms_host and s.lms_player):
+            errors.append(f"Speaker '{s.name}': lms_host and lms_player are required")
+        if s.backend_type not in ("dlna", "local", "lms", "stub"):
             errors.append(f"Speaker '{s.name}': unknown backend type '{s.backend_type}'")
         if s.http_port and not validate_port(s.http_port):
             errors.append(f"Speaker '{s.name}': invalid HTTP port {s.http_port}")
@@ -385,6 +418,9 @@ def _parse_yaml_speakers(raw_speakers: list[dict], config: Config) -> list[Speak
             proxy_port=int(raw.get("proxy_port", 0)),
             audio_device=raw.get("audio_device", "default"),
             audio_buffer_size=int(raw.get("audio_buffer_size", 2048)),
+            lms_host=raw.get("lms_host", ""),
+            lms_port=int(raw.get("lms_port", 9000)),
+            lms_player=str(raw.get("lms_player", "")),
         )
         speakers.append(speaker)
     return speakers
@@ -432,6 +468,9 @@ def _parse_env_speakers(config: Config) -> list[SpeakerConfig]:
     audio_devices = _split_env_padded("QOBUZPROXY_AUDIO_DEVICE", count, "default")
     audio_buffer_sizes_raw = _split_env_padded("QOBUZPROXY_AUDIO_BUFFER_SIZE", count, "2048")
     qualities_raw = _split_env_padded("QOBUZ_MAX_QUALITY", count, "27")
+    lms_hosts = _split_env_padded("QOBUZPROXY_LMS_HOST", count, "")
+    lms_ports_raw = _split_env_padded("QOBUZPROXY_LMS_PORT", count, "9000")
+    lms_players = _split_env_padded("QOBUZPROXY_LMS_PLAYER", count, "")
 
     speakers = []
     for i, name in enumerate(names):
@@ -447,6 +486,9 @@ def _parse_env_speakers(config: Config) -> list[SpeakerConfig]:
             proxy_port=int(proxy_ports_raw[i]),
             audio_device=audio_devices[i],
             audio_buffer_size=int(audio_buffer_sizes_raw[i]),
+            lms_host=lms_hosts[i],
+            lms_port=int(lms_ports_raw[i]),
+            lms_player=lms_players[i],
         )
         speakers.append(speaker)
 
@@ -472,7 +514,7 @@ def build_speaker_configs(
             speakers = env_speakers
         else:
             # Only create a speaker from flat config if a backend is actually configured
-            has_backend = config.backend.dlna.ip or config.backend.type == "local"
+            has_backend = config.backend.dlna.ip or config.backend.type in ("local", "lms")
             if has_backend:
                 speakers = [_single_speaker_from_config(config)]
 
@@ -635,6 +677,11 @@ def dict_to_config(d: dict) -> Config:
             config.backend.local.buffer_size = local.get(
                 "buffer_size", config.backend.local.buffer_size
             )
+        if "lms" in b:
+            lms = b["lms"]
+            config.backend.lms.host = lms.get("host", config.backend.lms.host)
+            config.backend.lms.port = int(lms.get("port", config.backend.lms.port))
+            config.backend.lms.player = str(lms.get("player", config.backend.lms.player))
 
     # Server
     if "server" in d:

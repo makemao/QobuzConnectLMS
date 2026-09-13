@@ -1,65 +1,45 @@
-# QobuzProxy Configuration
-# Copy to config.yaml and fill in your details
+# QobuzConnectLMS configuration
+# Copy to config.yaml and fill in your details.
 #
 # Authentication: open http://localhost:8689 and click "Log in to Qobuz".
 # The token is cached automatically — no credentials live in this file.
 
 qobuz:
-  max_quality: auto             # auto, 5=MP3, 6=CD, 7=Hi-Res 96k, 27=Hi-Res 192k
+  max_quality: 27               # 5=MP3, 6=CD, 7=Hi-Res 96k, 27=Hi-Res 192k
 
   # Power-user alternative: skip the web UI by pasting a pre-obtained token.
   # user_id: "12345678"
   # auth_token: "your-auth-token"
 
-device:
-  name: "QobuzProxy"            # Name shown in Qobuz app
-  uuid: null                    # Auto-generated if not specified
-
-backend:
-  type: "dlna"                  # dlna or local
-  dlna:
-    ip: "192.168.1.50"          # Required: DLNA device IP
-    port: 1400                  # DLNA device port
-    fixed_volume: false         # Ignore volume commands
-    proxy_port: 7120            # Audio proxy port for DLNA streaming
-    # description_url: ""       # UPnP description XML URL (auto-discovered via SSDP)
-  # local:
-  #   device: "default"         # Audio device name or "default"
-  #   buffer_size: 2048         # Audio buffer size in frames
-
 server:
-  http_port: 8689               # mDNS discovery HTTP server
+  http_port: 8689               # Web UI (login, status)
   bind_address: "0.0.0.0"       # Network interface to bind
 
 logging:
   level: "info"                 # debug, info, warning, error
 
-# --- Web UI ---
-# The web UI at http://localhost:8689 allows adding/editing/removing speakers.
-# Changes are saved back to this config file.
-#
-# To enable local audio device selection in the web UI:
-# (Requires: pip install qobuz-proxy[local])
-#   QOBUZPROXY_LOCAL_AUDIO_UI=true
-#
-# --- Multi-Speaker Configuration ---
-# Use 'speakers' instead of 'device'/'backend'/'server' for multiple speakers.
-# Each speaker appears as a separate device in the Qobuz app.
-# Ports are auto-assigned unless specified.
-#
-# speakers:
-#   - name: "Living Room"
-#     backend: dlna
-#     dlna_ip: "192.168.1.50"
-#     max_quality: auto
-#     # http_port: 8689          # optional, auto-assigned
-#     # proxy_port: 7120         # optional, auto-assigned
-#
-#   - name: "Office"
-#     backend: dlna
-#     dlna_ip: "192.168.1.51"
-#     max_quality: 7
-#
-#   - name: "Headphones"
-#     backend: local
-#     audio_device: "Built-in Output"
+# --- Speakers ---
+# Each speaker appears as a separate Qobuz Connect device in the Qobuz app.
+# Ports are auto-assigned unless specified (http_port).
+speakers:
+  # One entry per LMS player you want to expose.
+  - name: "Living Room (LMS)"   # Name shown in the Qobuz app
+    backend: lms
+    lms_host: "192.168.1.10"    # LMS server address
+    lms_port: 9000              # LMS web/JSON-RPC port
+    lms_player: "00:11:22:33:44:55"  # Player MAC address, or its exact LMS name
+
+  # - name: "Kitchen (LMS)"
+  #   backend: lms
+  #   lms_host: "192.168.1.10"
+  #   lms_player: "Kitchen"
+
+  # The upstream qobuz-proxy backends are still available:
+  # - name: "Sonos"
+  #   backend: dlna
+  #   dlna_ip: "192.168.1.50"
+  #   max_quality: auto
+  #
+  # - name: "Headphones"
+  #   backend: local              # Requires: pip install .[local]
+  #   audio_device: "Built-in Output"

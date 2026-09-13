@@ -11,6 +11,7 @@ from qobuz_proxy.config import Config
 
 from .base import AudioBackend
 from .dlna import DLNABackend
+from .lms import LMSBackend
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,13 @@ class BackendFactory:
             return await cls.create_local(
                 device=config.backend.local.device,
                 buffer_size=config.backend.local.buffer_size,
+            )
+        elif backend_type == "lms":
+            return await cls.create_lms(
+                host=config.backend.lms.host,
+                port=config.backend.lms.port,
+                player=config.backend.lms.player,
+                name=config.device.name,
             )
         else:
             # Generic instantiation for registered backends
@@ -172,6 +180,20 @@ class BackendFactory:
         raise BackendNotFoundError("Failed to initialize local audio backend")
 
     @classmethod
+    async def create_lms(
+        cls,
+        host: str,
+        player: str,
+        port: int = 9000,
+        name: Optional[str] = None,
+    ) -> AudioBackend:
+        """Create a Lyrion Music Server backend driving one LMS player."""
+        backend = LMSBackend(host=host, port=port, player_id=player, name=name)
+        if await backend.connect():
+            return backend
+        raise BackendNotFoundError(f"Failed to connect to LMS player '{player}' at {host}:{port}")
+
+    @classmethod
     def list_available_backends(cls) -> list[str]:
         """List available backend types."""
         return BackendRegistry.available_types()
@@ -179,6 +201,7 @@ class BackendFactory:
 
 # Register backends
 BackendRegistry.register("dlna", DLNABackend)
+BackendRegistry.register("lms", LMSBackend)
 
 # Register local backend (lazy - import only when used)
 try:

@@ -19,6 +19,7 @@ from qobuz_proxy.config import (
     Config,
     DeviceConfig,
     DLNAConfig,
+    LMSConfig,
     LocalConfig,
     LoggingConfig,
     QobuzConfig,
@@ -159,6 +160,10 @@ class Speaker:
         elif self._config.backend_type == "local":
             config_dict["audio_device"] = self._config.audio_device
             config_dict["buffer_size"] = self._config.audio_buffer_size
+        elif self._config.backend_type == "lms":
+            config_dict["lms_host"] = self._config.lms_host
+            config_dict["lms_port"] = self._config.lms_port
+            config_dict["lms_player"] = self._config.lms_player
 
         return {
             "id": slugify_name(self._config.name),
@@ -198,6 +203,11 @@ class Speaker:
                 local=LocalConfig(
                     device=self._config.audio_device,
                     buffer_size=self._config.audio_buffer_size,
+                ),
+                lms=LMSConfig(
+                    host=self._config.lms_host,
+                    port=self._config.lms_port,
+                    player=self._config.lms_player,
                 ),
             ),
             server=ServerConfig(
@@ -262,10 +272,14 @@ class Speaker:
                             f"using fallback quality: CD (FLAC 16/44)"
                         )
                 else:
-                    # Local backend: default to Hi-Res 192k
+                    # Local / LMS backend: default to Hi-Res 192k (LMS applies its own
+                    # Qobuz plugin format preference and transcoding when streaming)
                     self._effective_quality = 27
                     self._quality_source = "auto"
-                    logger.info(f"[{self.name}] Local backend, using max quality: Hi-Res (24/192)")
+                    logger.info(
+                        f"[{self.name}] {self._config.backend_type} backend, "
+                        f"using max quality: Hi-Res (24/192)"
+                    )
 
             # 4. Create metadata service
             logger.debug(f"[{self.name}] Creating metadata service...")

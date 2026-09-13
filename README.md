@@ -1,190 +1,161 @@
-# QobuzProxy
+# QobuzConnectLMS
 
-A bridge between Qobuz Connect and DLNA speakers. Also supports local audio playback.
+**Qobuz Connect for Lyrion Music Server (LMS, formerly Logitech Media Server).**
 
-## Why?
+Pick your Squeezebox / squeezelite / piCorePlayer players directly from the official
+Qobuz app, like any Qobuz Connect speaker: play, pause, skip, seek and change the
+volume from your phone, while LMS keeps doing the actual streaming.
 
-Qobuz has a "Connect" feature (similar to Spotify Connect) that lets you control playback on supported devices from their app. Unfortunately, many popular speakers — most notably **Sonos** — don't support Qobuz Connect natively. This means you can't pick a Sonos speaker as a playback target in the Qobuz app, even though Sonos fully supports DLNA/UPnP streaming.
+QobuzConnectLMS is a fork of [qobuz-proxy](https://github.com/leolobato/qobuz-proxy)
+that adds an **`lms` backend**. The upstream DLNA and local-audio backends are kept.
 
-QobuzProxy solves this by acting as a virtual Qobuz Connect device on your network. When you open the Qobuz app, QobuzProxy shows up as a selectable speaker. When you play music, it receives the stream from Qobuz and forwards it to your DLNA-compatible speaker (like Sonos), preserving hi-res audio quality.
+## How it works
 
-**In short:** Run QobuzProxy on a Raspberry Pi (or Docker or any always-on machine) on your local network, and your Sonos speakers become fully controllable Qobuz Connect targets — play, pause, skip, and adjust volume, all from the official Qobuz app.
-
-<p align="center">
-  <img src="docs/images/webui-speakers.png" alt="QobuzProxy Web UI" width="500">
-</p>
-
-## Features
-
-- Appears as a Qobuz Connect device in the official Qobuz app
-- Streams audio to DLNA renderers (Sonos, Denon HEOS, etc.)
-- Local audio playback via PortAudio (play directly through your machine's speakers/DAC)
-- **Web UI for speaker management** — discover, add, edit, and remove speakers from your browser
-- Auto-detects device capabilities to select optimal audio quality
-- Zero-config startup — boot with no config file, set everything up from the web UI
-- Runs on Raspberry Pi, Docker, or any Linux/macOS system
-
-## Audio Quality
-
-By default (`max_quality: auto`), QobuzProxy queries your DLNA device's capabilities and automatically selects the best supported quality. You can also set a specific quality level:
-
-| Value | Format |
-|-------|--------|
-| `auto` | Auto-detect from device (recommended) |
-| `5` | MP3 320 kbps |
-| `6` | FLAC CD (16-bit/44.1kHz) |
-| `7` | FLAC Hi-Res (24-bit/96kHz) |
-| `27` | FLAC Hi-Res (24-bit/192kHz) |
-
-## Local Audio Playback
-
-QobuzProxy can also play audio directly through your machine's speakers or DAC, without needing a DLNA device. Set the `QOBUZPROXY_BACKEND` environment variable to `local`:
-
-```bash
-docker run -d --network host \
-  -v ./data:/data \
-  -e QOBUZPROXY_BACKEND=local \
-  --device /dev/snd \
-  ghcr.io/leolobato/qobuz-proxy:latest
+```
+ Qobuz app ──Qobuz Connect (cloud)──► QobuzConnectLMS ──JSON-RPC──► LMS ──► players
+                                       (one virtual       plays qobuz://<id>.flac
+                                        device per         with its Qobuz plugin
+                                        LMS player)
 ```
 
-Note: The `--device /dev/snd` flag gives the container access to the host's audio devices (Linux only). Qobuz credentials should be in your `data/config.yaml`.
+- Each configured LMS player is announced on your network as a Qobuz Connect device.
+- When you play a track from the Qobuz app, QobuzConnectLMS asks LMS to play
+  `qobuz://<track_id>.flac` on that player. **Audio never goes through the proxy**:
+  LMS and its Qobuz plugin fetch and stream the track, so LMS's format preferences,
+  transcoding and player sync keep working.
+- Playback state, position and volume are polled back from LMS and reported to the
+  Qobuz app. When a track ends, the next one from the Qobuz queue is started.
+- If you start something else on the player from LMS (a radio, your library...), the
+  proxy releases the player: the Qobuz queue does not advance and a stop from the
+  Qobuz app will not interrupt what you started.
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the technical design.
+
+## Requirements
+
+- Lyrion Music Server with the **Qobuz plugin** installed and logged in to your
+  Qobuz account (tested with LMS 9.1.1 and plugin 3.7.1).
+- An active Qobuz subscription.
+- An always-on machine on the **same LAN** as the phone running the Qobuz app, with
+  Python 3.10+ (or Docker). It can be the LMS host itself or any other machine.
+- Network access from that machine to the LMS web port (default `9000`).
 
 ## Installation
 
-A pre-built Docker image is available from GitHub Container Registry:
+### Without Docker
 
 ```bash
-docker pull ghcr.io/leolobato/qobuz-proxy:latest
-```
-
-### Quick Start (Docker)
-
-```bash
-docker run -d --network host \
-  -v ./data:/data \
-  ghcr.io/leolobato/qobuz-proxy:latest
-```
-
-Then open **http://localhost:8689** in your browser, log in to Qobuz, and add your speakers from the web UI. No config file needed.
-
-The `/data` volume persists auth tokens, credentials, and speaker configuration across restarts.
-
-You can also pre-configure speakers with a `config.yaml` or environment variables — see [Configuration](#configuration) below.
-
-View logs:
-```bash
-docker-compose logs -f
-```
-
-### Quick Start (without Docker)
-
-```bash
+git clone https://github.com/makemao/QobuzConnectLMS.git
+cd QobuzConnectLMS
 pip install .
-qobuz-proxy
+cp config.yaml.example config.yaml   # then edit it, see below
+qobuz-proxy --config config.yaml
 ```
 
-Open **http://localhost:8689**, authenticate, and add speakers from the UI. Speaker configuration is saved to `config.yaml` in the current directory automatically.
+### Docker
 
-To use a pre-existing config file: `qobuz-proxy --config /path/to/config.yaml`
+```bash
+docker build -t qobuzconnectlms .
+docker run -d --name qobuzconnectlms --network host \
+  -v ./data:/data \
+  qobuzconnectlms
+```
 
-### Authentication
+Put your `config.yaml` in `./data/`. Host networking is required for mDNS discovery
+(see [Network](#network)).
 
-QobuzProxy authenticates via Qobuz's OAuth flow — just click a button and log in:
+## Configuration
 
-1. Start QobuzProxy (Docker or standalone).
-2. Open **http://localhost:8689** in your browser.
-3. Click **Log in to Qobuz** — you'll be redirected to the Qobuz sign-in page.
-4. Log in with your Qobuz credentials.
-5. You'll be redirected back to QobuzProxy, now authenticated.
-
-The auth token is cached locally. You only need to do this once until the token expires. This works the same whether running locally, in Docker, or behind a reverse proxy.
-
-**Power-user alternative:** You can skip the web UI by providing `auth_token` and `user_id` directly in your `config.yaml`:
+Add one speaker per LMS player in `config.yaml`:
 
 ```yaml
 qobuz:
-  user_id: "12345678"
-  auth_token: "your-auth-token"
-```
+  max_quality: 27
 
-Or via environment variables: `QOBUZ_USER_ID` and `QOBUZ_AUTH_TOKEN`.
-
-### Multi-Speaker Setup
-
-A single QobuzProxy instance can manage multiple speakers. Each speaker appears as a separate device in the Qobuz app.
-
-The easiest way to set up multiple speakers is through the web UI at **http://localhost:8689** — click **+ Add Speaker** for each device. The web UI will scan your network for DLNA devices and let you configure each one. Changes are saved to `config.yaml` automatically.
-
-You can also configure speakers directly in `config.yaml`:
-
-```yaml
 speakers:
-  - name: "Living Room"
-    backend: dlna
-    dlna_ip: "192.168.1.50"
-    max_quality: auto
+  - name: "Living Room (LMS)"        # name shown in the Qobuz app
+    backend: lms
+    lms_host: "192.168.1.10"         # LMS server address
+    lms_port: 9000                   # LMS web / JSON-RPC port
+    lms_player: "00:11:22:33:44:55"  # player MAC address, or its exact LMS name
 
-  - name: "Office"
-    backend: dlna
-    dlna_ip: "192.168.1.51"
-    max_quality: 7
-
-  - name: "Headphones"
-    backend: local
-    audio_device: "Built-in Output"
+  - name: "Kitchen (LMS)"
+    backend: lms
+    lms_host: "192.168.1.10"
+    lms_player: "Kitchen"
 ```
 
-Ports are auto-assigned unless explicitly set via `http_port` and `proxy_port`. See `config.yaml.example` for all available options.
+To find player MAC addresses: LMS web UI → *Settings* → *Information*, or
 
-### Network Requirements
-
-**Important**: QobuzProxy requires `network_mode: host` (Docker) or direct host access for mDNS discovery to work. This allows the Qobuz app to find the device on your local network.
-
-If you cannot use host networking, consider:
-- Using a macvlan network with a dedicated IP on your LAN
-- Running QobuzProxy directly on the host (not in Docker)
-
-### Configuration
-
-The config file is found automatically in this order:
-
-1. `--config` CLI argument (if provided)
-2. `./config.yaml` (current directory)
-3. `$QOBUZPROXY_DATA_DIR/config.yaml` (set to `/data` in the Docker image)
-
-Environment variables and CLI arguments override config file values. See `.env.example` for available environment variables.
-
-### Data Directory
-
-In Docker, both the config file and credential cache live under `/data`:
-
-```yaml
-volumes:
-  - ./data:/data
-```
-
-This directory stores auth tokens and the Qobuz web player credential cache so they persist across restarts. Outside Docker, the cache defaults to `~/.qobuz-proxy/`.
-
-### Health Check
-
-The container includes a health check that verifies the HTTP server is responding:
 ```bash
-docker inspect --format='{{.State.Health.Status}}' qobuz-proxy
+curl -s -d '{"id":1,"method":"slim.request","params":["",["players","0","50"]]}' \
+  http://<lms-host>:9000/jsonrpc.js
 ```
 
-## Contributing
+A single speaker can also be configured with environment variables:
+`QOBUZPROXY_BACKEND=lms`, `QOBUZPROXY_DEVICE_NAME`, `QOBUZPROXY_LMS_HOST`,
+`QOBUZPROXY_LMS_PORT`, `QOBUZPROXY_LMS_PLAYER` (see `.env.example`; comma-separated
+values define several speakers).
 
-Bug reports and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first: keep each PR to a single change, leave version bumps to the maintainer, and say how you tested on real hardware.
+> LMS speakers are configured in `config.yaml` or environment variables. The web UI
+> "Add speaker" form only knows the upstream DLNA and local backends.
+
+### Authentication
+
+1. Start QobuzConnectLMS.
+2. Open **http://<host>:8689** and click **Log in to Qobuz**.
+3. Sign in on the Qobuz page; you are redirected back, authenticated.
+
+The token is cached in `~/.qobuz-proxy/` (or `/data` in Docker), never in
+`config.yaml`. Keep that directory private.
+
+### Audio quality
+
+`max_quality` is what the proxy announces to the Qobuz app. The stream actually
+played is chosen by **LMS's Qobuz plugin** (its *preferred format* setting) and by
+what your player supports.
+
+## Network
+
+- The Qobuz app finds devices with **mDNS**: the machine running QobuzConnectLMS must
+  be on the same LAN/VLAN as your phone. In Docker, use `--network host`.
+- The app then connects to the device's HTTP port (auto-assigned from `8690`, one
+  per speaker); allow it in your firewall on private networks.
+- Windows works for testing (Ctrl+C to stop), Linux is the intended target.
+
+## Known limitations
+
+- **Unofficial.** Qobuz Connect is not a public API: this relies on a
+  reverse-engineered protocol and may break if Qobuz changes it.
+- No gapless: each track is started individually on the LMS player.
+- When playing, the proxy replaces the player's current LMS playlist with the Qobuz
+  track and turns LMS repeat off for that player.
+- LMS player groups/sync are driven by LMS: pick the group's master player.
+
+## Development
+
+```bash
+pip install uv
+uv sync
+uv run pytest tests/backends/test_lms_backend.py   # LMS backend tests (fake LMS server)
+uv run pytest --ignore-glob='*local*'              # everything except local-audio tests
+uv run ruff check qobuz_proxy/ tests/
+```
 
 ## Acknowledgments
 
-This project is based on the Qobuz Connect reverse-engineering work done by [Tobias Guyer](https://github.com/tobiasguyer) in [StreamCore32](https://github.com/tobiasguyer/StreamCore32). Thanks to his efforts in figuring out the Qobuz Connect protocol, this project was possible.
+- [qobuz-proxy](https://github.com/leolobato/qobuz-proxy) by leolobato — the Qobuz
+  Connect device implementation this fork is built on.
+- [StreamCore32](https://github.com/tobiasguyer/StreamCore32) by Tobias Guyer — the
+  original Qobuz Connect reverse-engineering work.
+- [Lyrion Music Server](https://lyrion.org) and its Qobuz plugin.
 
 ## Disclaimer
 
-This project was built almost entirely through agentic programming using [Claude Code](https://claude.ai/claude-code). The architecture, implementation, and tests were generated through AI-assisted development with human guidance and review.
+Not affiliated with Qobuz or the Lyrion project. For personal use with your own
+Qobuz subscription. Like upstream, this project was developed with AI assistance
+([Claude Code](https://claude.ai/claude-code)) under human guidance and review.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — original copyright of qobuz-proxy retained.
