@@ -156,6 +156,8 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
   app or the remote asks.
 - **Remote media keys** (play/pause, next, previous) act on the LMS player: during a
   Qobuz Connect session, QobuzConnectLMS sees the LMS change through its events.
+  Rewind restarts the track during a Qobuz Connect session: the LMS playlist only holds
+  the current and next tracks, the previous one stays in the Qobuz queue.
 
 ## 5. Status
 
