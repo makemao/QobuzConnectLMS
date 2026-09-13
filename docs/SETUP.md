@@ -166,7 +166,7 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
 | Component | Status |
 |---|---|
 | QobuzConnectLMS (Qobuz Connect, gapless, LMS events) | Deployed and validated by listening, including after reboot |
-| Volume bridge | **Deployed** (replaces the first `phantom_bridge.py`, kept on the Pi as a fallback): split-line fix, mute, startup alignment of LMS and the Phantom to 20 % |
+| Volume bridge | **Deployed and validated** (replaces the first `phantom_bridge.py`, kept on the Pi as a fallback): split-line fix, mute, startup alignment of LMS and the Phantom to 20 %; restarts on its own after a reboot. Mute from the Qobuz app still to be checked |
 | Shield (cinema) | HDMI fixed volume set, network debugging enabled, ADB key authorized; power state and remote keys read without waking it (measured) |
-| Shield remote service | **Deployed**. First use showed a network connection to the Shield that hung without closing: fixed with a heartbeat, and volume up made safe (cap, repeat limit, steps from the Phantom's real volume) |
+| Shield remote service | **Deployed and validated by use**: volume (music and film), play/pause on the film, rewind, double rewind → FIP favorite, microphone mute and volume while muted; restarts on its own after a reboot (connected to the Shield about 1 min after boot). First use showed a network connection to the Shield that hung without closing: fixed with a heartbeat, and volume up made safe (cap, repeat limit, steps from the Phantom's real volume) |
 | Hue Tap Dial service | Kept as an alternative: implemented and tested without hardware; coordinator purchase on hold |
