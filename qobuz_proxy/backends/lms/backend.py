@@ -5,6 +5,11 @@ The Qobuz Connect session stays here; audio does not. On play, the LMS player is
 told to play ``qobuz://<track_id>.flac`` and LMS's own Qobuz plugin fetches and
 streams the track (hi-res, multi-room sync and transcoding stay LMS's business).
 State, position and volume are polled back over LMS's JSON-RPC API.
+
+Gapless: the LMS playlist holds at most the current track and the next Qobuz track.
+LMS/squeezelite then chain them without a gap; the poll loop sees the current index
+move to the armed track and reports the transition. The finished track is removed so
+the playlist stays at two items.
 """
 
 import asyncio
@@ -25,6 +30,8 @@ POLL_INTERVAL_SECONDS = 1.0
 PLAYBACK_START_GRACE_PERIOD_SECONDS = 6.0
 STATUS_CACHE_SECONDS = 0.3
 REQUEST_TIMEOUT_SECONDS = 5.0
+# Our playlist never exceeds two items; a few more show a takeover clearly.
+STATUS_PLAYLIST_ITEMS = 10
 
 _MODE_TO_STATE = {
     "play": PlaybackState.PLAYING,
@@ -57,6 +64,7 @@ class LMSBackend(AudioBackend):
         self._poll_task: Optional[asyncio.Task] = None
 
         self._current_url: Optional[str] = None
+        self._next_url: Optional[str] = None  # armed for gapless, queued after current
         self._playback_started_at = 0.0
         self._status: dict[str, Any] = {}
         self._status_at = 0.0
@@ -81,7 +89,9 @@ class LMSBackend(AudioBackend):
 
     async def _player_status(self, fresh: bool = False) -> dict[str, Any]:
         if fresh or time.monotonic() - self._status_at > STATUS_CACHE_SECONDS:
-            self._status = await self._request(["status", "-", "1", "tags:u"])
+            self._status = await self._request(
+                ["status", "0", str(STATUS_PLAYLIST_ITEMS), "tags:u"]
+            )
             self._status_at = time.monotonic()
         return self._status
 
@@ -89,16 +99,40 @@ class LMSBackend(AudioBackend):
         self._status_at = 0.0
 
     @staticmethod
-    def _status_url(status: dict[str, Any]) -> Optional[str]:
-        loop = status.get("playlist_loop") or []
-        if loop and isinstance(loop[0], dict):
-            url = loop[0].get("url")
-            return str(url) if url else None
-        return None
+    def _playlist_urls(status: dict[str, Any]) -> list[Optional[str]]:
+        """URLs of the first playlist items, by playlist index."""
+        urls: list[Optional[str]] = []
+        for item in status.get("playlist_loop") or []:
+            if isinstance(item, dict):
+                url = item.get("url")
+                urls.append(str(url) if url else None)
+        return urls
+
+    @staticmethod
+    def _cur_index(status: dict[str, Any]) -> int:
+        try:
+            return int(status.get("playlist_cur_index", 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _status_url(self, status: dict[str, Any]) -> Optional[str]:
+        """URL of the item LMS is currently playing."""
+        urls = self._playlist_urls(status)
+        index = self._cur_index(status)
+        return urls[index] if 0 <= index < len(urls) else None
 
     def _owns_player(self, status: dict[str, Any]) -> bool:
-        """True while the LMS player is still playing the track we started."""
-        return self._current_url is not None and self._status_url(status) == self._current_url
+        """True while LMS plays the track we started, or the next one we armed."""
+        url = self._status_url(status)
+        if url is None:
+            return False
+        return url in (self._current_url, self._next_url)
+
+    def _index_of(self, status: dict[str, Any], url: str, after: int) -> Optional[int]:
+        for index, item_url in enumerate(self._playlist_urls(status)):
+            if index > after and item_url == url:
+                return index
+        return None
 
     # =========================================================================
     # Lifecycle
@@ -163,9 +197,11 @@ class LMSBackend(AudioBackend):
     async def play(self, url: str, metadata: BackendTrackMetadata) -> None:
         # The Qobuz CDN url is ignored on purpose: LMS resolves the track itself.
         lms_url = track_url(metadata.track_id)
+        self._next_url = None  # `playlist play` replaces the whole LMS playlist
         try:
-            # A single-item LMS playlist: the Qobuz Connect queue is the queue.
+            # The Qobuz Connect queue is the queue: no LMS repeat/shuffle reordering.
             await self._request(["playlist", "repeat", "0"])
+            await self._request(["playlist", "shuffle", "0"])
             await self._request(["playlist", "play", lms_url, metadata.title])
         except Exception as e:
             logger.error(f"LMS play failed for {lms_url}: {e}")
@@ -207,6 +243,7 @@ class LMSBackend(AudioBackend):
         except Exception as e:
             logger.warning(f"LMS stop failed: {e}")
         self._current_url = None
+        self._next_url = None
         self._invalidate_status()
         self._notify_state_change(PlaybackState.STOPPED)
 
@@ -243,6 +280,89 @@ class LMSBackend(AudioBackend):
         return self._volume
 
     # =========================================================================
+    # Gapless
+    # =========================================================================
+
+    @property
+    def supports_gapless(self) -> bool:
+        return True
+
+    async def set_next_track(
+        self, url: str, metadata: BackendTrackMetadata, queue_item_id: int = 0
+    ) -> bool:
+        """Queue the next Qobuz track right after the current one in LMS."""
+        next_url = track_url(metadata.track_id)
+        # Same track twice in a row: transitions could not be told apart by URL.
+        # Let the normal track-ended path restart it instead.
+        if not self._current_url or next_url == self._current_url:
+            return False
+        try:
+            status = await self._player_status(fresh=True)
+            if self._status_url(status) != self._current_url:
+                return False
+            cur = self._cur_index(status)
+            if self._next_url == next_url and self._index_of(status, next_url, cur) is not None:
+                return True  # already armed (the player re-arms in bursts)
+            if self._next_url:
+                await self.clear_next_track()
+                status = await self._player_status(fresh=True)
+                cur = self._cur_index(status)
+            if len(self._playlist_urls(status)) > cur + 1:
+                # Items after the current one that we did not put there: not ours to reorder
+                logger.debug("Gapless: LMS playlist has foreign items after current, not arming")
+                return False
+            await self._request(["playlist", "add", next_url, metadata.title])
+        except Exception as e:
+            logger.warning(f"Gapless: failed to queue next track in LMS: {e}")
+            return False
+        self._next_url = next_url
+        self._invalidate_status()
+        logger.info(f"Gapless: queued next track in LMS: {metadata.artist} - {metadata.title}")
+        return True
+
+    async def clear_next_track(self) -> None:
+        """Remove the armed next track from the LMS playlist."""
+        next_url = self._next_url
+        if not next_url:
+            return
+        self._next_url = None
+        try:
+            status = await self._player_status(fresh=True)
+            if self._status_url(status) == next_url:
+                # LMS already moved on to it: removing it would stop playback. Keep
+                # ownership; the player's next command (play/skip) replaces the playlist.
+                self._current_url = next_url
+                return
+            index = self._index_of(status, next_url, self._cur_index(status))
+            if index is not None:
+                await self._request(["playlist", "delete", str(index)])
+        except Exception as e:
+            logger.warning(f"Gapless: failed to remove next track from LMS: {e}")
+        self._invalidate_status()
+
+    async def _handle_transition(self, status: dict[str, Any]) -> None:
+        """LMS moved from the current track to the armed one."""
+        previous_url = self._current_url
+        self._current_url = self._next_url
+        self._next_url = None
+        self._playback_started_at = time.monotonic()
+        logger.info("Gapless: LMS moved to the next track")
+        self._notify_next_track_started()
+        self._notify_position_update(int(float(status.get("time") or 0) * 1000))
+        # Drop the finished track so the LMS playlist stays [current, next]
+        if previous_url:
+            urls = self._playlist_urls(status)
+            cur = self._cur_index(status)
+            for index in range(cur - 1, -1, -1):
+                if urls[index] == previous_url:
+                    try:
+                        await self._request(["playlist", "delete", str(index)])
+                    except Exception as e:
+                        logger.debug(f"Gapless: could not remove finished track: {e}")
+                    break
+        self._invalidate_status()
+
+    # =========================================================================
     # State
     # =========================================================================
 
@@ -277,7 +397,12 @@ class LMSBackend(AudioBackend):
                     # release it without advancing the Qobuz queue.
                     logger.info("LMS player taken over by another source, releasing it")
                     self._current_url = None
+                    self._next_url = None
                     self._notify_state_change(PlaybackState.STOPPED)
+                    continue
+
+                if self._next_url and self._status_url(status) == self._next_url:
+                    await self._handle_transition(status)
                     continue
 
                 new_state = _MODE_TO_STATE.get(str(status.get("mode")), PlaybackState.STOPPED)
@@ -286,6 +411,9 @@ class LMSBackend(AudioBackend):
                         if in_grace:
                             continue
                         logger.debug("LMS track ended")
+                        # An armed next track that LMS did not reach is dropped: the
+                        # player's track-ended handling starts it with play().
+                        self._next_url = None
                         self._notify_track_ended()
                     self._notify_state_change(new_state)
 

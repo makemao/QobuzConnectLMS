@@ -59,7 +59,7 @@ Proto files in `protos/`: `qconnect_common.proto`, `qconnect_envelope.proto`, `q
 2. **Connect** (`connect/`): Registers as mDNS device + HTTP discovery endpoints (`discovery.py`), manages WebSocket connection to Qobuz servers (`ws_manager.py`), encodes/decodes protobuf messages (`protocol.py`)
 3. **Playback** (`playback/`): State machine player (`player.py`), queue management (`queue.py`), track metadata from Qobuz API (`metadata.py`), command handlers (`command_handler.py`, `queue_handler.py`, `volume_handler.py`), periodic state reporting to Qobuz app (`state_reporter.py`)
 4. **Backend** (`backends/`): Abstract `AudioBackend` interface (`base.py`), factory/registry pattern (`factory.py`). Implementations:
-   - **LMS** (`lms/`): `LMSBackend` drives one LMS player over HTTP JSON-RPC (`/jsonrpc.js`). Plays `qobuz://<track_id>.flac`, polls `status` for state/position/volume, detects natural track end and takeovers. No audio passes through the proxy.
+   - **LMS** (`lms/`): `LMSBackend` drives one LMS player over HTTP JSON-RPC (`/jsonrpc.js`). Plays `qobuz://<track_id>.flac`, polls `status` for state/position/volume, detects natural track end and takeovers, and implements gapless by keeping the LMS playlist at `[current, next]` (see `docs/DESIGN.md` §4.4). No audio passes through the proxy.
    - **DLNA** (`dlna/`, upstream): SOAP/UPnP client (`client.py`), device capability detection (`capabilities.py`), audio proxy server (`proxy_server.py`)
    - **Local** (`local/`, upstream): Downloads FLAC, decodes to float32, plays via PortAudio (`backend.py`), ring buffer (`ring_buffer.py`), sounddevice output stream (`stream.py`). Optional deps: `sounddevice`, `numpy`, `soundfile`
 

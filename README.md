@@ -24,7 +24,9 @@ that adds an **`lms` backend**. The upstream DLNA and local-audio backends are k
   LMS and its Qobuz plugin fetch and stream the track, so LMS's format preferences,
   transcoding and player sync keep working.
 - Playback state, position and volume are polled back from LMS and reported to the
-  Qobuz app. When a track ends, the next one from the Qobuz queue is started.
+  Qobuz app.
+- **Gapless**: the next track of the Qobuz queue is added to the LMS playlist in
+  advance, so LMS chains tracks without a gap (live albums, classical, DJ mixes).
 - If you start something else on the player from LMS (a radio, your library...), the
   proxy releases the player: the Qobuz queue does not advance and a stop from the
   Qobuz app will not interrupt what you started.
@@ -133,9 +135,11 @@ what your player supports.
 
 - **Unofficial.** Qobuz Connect is not a public API: this relies on a
   reverse-engineered protocol and may break if Qobuz changes it.
-- No gapless: each track is started individually on the LMS player.
 - When playing, the proxy replaces the player's current LMS playlist with the Qobuz
-  track and turns LMS repeat off for that player.
+  track (plus the next one, for gapless) and turns LMS repeat and shuffle off for that
+  player.
+- Gapless is skipped when the same track is queued twice in a row (it is restarted
+  normally instead).
 - LMS player groups/sync are driven by LMS: pick the group's master player.
 
 ## Development
