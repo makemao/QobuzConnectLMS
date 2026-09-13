@@ -27,7 +27,7 @@ Addresses and identifiers of the real installation are intentionally left out.
                                                                               │ optical (TOSLINK)
                                                                               ▼
                                                       ┌──────────────────────────────────────────────┐
-                                                      │ Devialet Phantom 103 dB — stereo pair         │
+                                                      │ Devialet Phantom I 103 dB (2020) — stereo pair│
                                                       │  leader (left) + right, optical input, DAC +  │
                                                       │  amplification; volume set by the bridge       │
                                                       └──────────────────────────────────────────────┘
@@ -43,10 +43,14 @@ Addresses and identifiers of the real installation are intentionally left out.
 | Player | **squeezelite 2.0.0** (piCorePlayer build) | Output `hw:CARD=sndrpihifiberry`; LMS player **volume control: output level fixed at 100 %** (`digitalVolumeControl = 0`): the stream leaves the Pi unaltered |
 | Digital output | **HiFiBerry Digi Pro** (WM8804, `dtoverlay=hifiberry-digi-pro`) | S/PDIF, optical out; dedicated audio clocks (not the Pi's); up to 24/192 |
 | Link | Optical TOSLINK cable | Digital and galvanically isolated: no electrical path between the Pi and the speakers |
-| Speakers | **Devialet Phantom 103 dB**, stereo pair (leader = left, right), firmware DOS 2.19.1 | Receive the optical input on the leader and do the D/A conversion and amplification; volume controlled over the Devialet IP Control API. Other inputs available: AirPlay 2, Spotify Connect, UPnP, Roon Ready (RAAT), Bluetooth, second optical |
+| Speakers | **Devialet Phantom I 103 dB** (2020 generation), stereo pair (leader = left, right), firmware DOS 2.19.1 (reported model: "Phantom 103 dB") | Receive the optical input on the leader and do the D/A conversion and amplification; volume controlled over the Devialet IP Control API. Other inputs available: AirPlay 2, Spotify Connect, UPnP, Roon Ready (RAAT), Bluetooth, second optical |
 
 ### 1.3 Design choices this setup relies on
 
+- **No native Qobuz Connect on the speakers**: this Phantom I (2020) offers AirPlay 2,
+  Spotify Connect, UPnP, Roon Ready, Bluetooth and optical inputs, but no Qobuz Connect
+  (its IP Control API lists no such source). QobuzConnectLMS provides it through LMS,
+  which keeps the whole bit-perfect optical chain and the single volume path below.
 - **Bit-perfect digital path, volume in the speakers**: LMS does not attenuate (fixed
   100 %), so the full-resolution signal reaches the Phantom, and the Phantom's own volume
   is the only volume stage. This is why LMS volume changes must be forwarded to the
