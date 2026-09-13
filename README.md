@@ -42,6 +42,12 @@ See [docs/DESIGN.md](docs/DESIGN.md) for the technical design.
 
 ## Installation
 
+### piCorePlayer
+
+To run it on the piCorePlayer box that hosts LMS, with a start-at-boot script and
+nothing installed into the system, follow
+[contrib/picoreplayer/README.md](contrib/picoreplayer/README.md).
+
 ### Without Docker
 
 ```bash

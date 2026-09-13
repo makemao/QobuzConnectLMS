@@ -180,4 +180,5 @@ from LMS.
 - Event-driven state via the LMS CLI `subscribe` (port 9090) instead of polling.
 - LMS authentication (HTTP basic auth).
 - Add LMS player discovery to the web UI "Add speaker" form.
-- Packaging for piCorePlayer (running on the LMS host itself).
+- piCorePlayer: installed as a self-contained folder with start/stop scripts
+  (`contrib/picoreplayer/`); a native `.tcz` extension would integrate with the web UI.
