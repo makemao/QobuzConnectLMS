@@ -59,7 +59,7 @@ Proto files in `protos/`: `qconnect_common.proto`, `qconnect_envelope.proto`, `q
 2. **Connect** (`connect/`): Registers as mDNS device + HTTP discovery endpoints (`discovery.py`), manages WebSocket connection to Qobuz servers (`ws_manager.py`), encodes/decodes protobuf messages (`protocol.py`)
 3. **Playback** (`playback/`): State machine player (`player.py`), queue management (`queue.py`), track metadata from Qobuz API (`metadata.py`), command handlers (`command_handler.py`, `queue_handler.py`, `volume_handler.py`), periodic state reporting to Qobuz app (`state_reporter.py`)
 4. **Backend** (`backends/`): Abstract `AudioBackend` interface (`base.py`), factory/registry pattern (`factory.py`). Implementations:
-   - **LMS** (`lms/`): `LMSBackend` drives one LMS player over HTTP JSON-RPC (`/jsonrpc.js`). Plays `qobuz://<track_id>.flac`, polls `status` for state/position/volume, detects natural track end and takeovers, and implements gapless by keeping the LMS playlist at `[current, next]` (see `docs/DESIGN.md` §4.4). No audio passes through the proxy.
+   - **LMS** (`lms/`): `LMSBackend` drives one LMS player over HTTP JSON-RPC (`/jsonrpc.js`). Plays `qobuz://<track_id>.flac`, reads `status` for state/position/volume (woken by LMS CLI events on port 9090, polling as fallback), detects natural track end and takeovers, and implements gapless by keeping the LMS playlist at `[current, next]` (see `docs/DESIGN.md` §4.3-4.5). No audio passes through the proxy.
    - **DLNA** (`dlna/`, upstream): SOAP/UPnP client (`client.py`), device capability detection (`capabilities.py`), audio proxy server (`proxy_server.py`)
    - **Local** (`local/`, upstream): Downloads FLAC, decodes to float32, plays via PortAudio (`backend.py`), ring buffer (`ring_buffer.py`), sounddevice output stream (`stream.py`). Optional deps: `sounddevice`, `numpy`, `soundfile`
 
@@ -67,9 +67,11 @@ Proto files in `protos/`: `qconnect_common.proto`, `qconnect_envelope.proto`, `q
 
 **Qobuz app command → LMS playback**: WebSocket message → `protocol.py` decodes → `ws_manager.py` dispatches → `command_handler.py`/`queue_handler.py` → `player.py` state machine → `LMSBackend.play()` → JSON-RPC `playlist play qobuz://<id>.flac` → LMS Qobuz plugin streams from the Qobuz CDN to the player. The CDN URL computed by the player is ignored by this backend.
 
-**LMS state → Qobuz app**: `LMSBackend._poll_state_loop` (1 s) reads `status 0 10 tags:u` (mode, time, `playlist_cur_index`, playlist URLs) → state/position callbacks → `player.py` → `state_reporter.py` → WebSocket → app. `PLAYING → stop` on a track the proxy still owns fires `track_ended`, which makes the player start the next queue item (fallback when no next track is armed).
+**LMS state → Qobuz app**: `LMSBackend._poll_state_loop` wakes on an LMS CLI event (or every 1 s without events, 5 s as a safety net with events) and reads `status 0 10 tags:u` (mode, time, duration, `playlist_cur_index`, playlist URLs) → state/position callbacks → `player.py` → `state_reporter.py` → WebSocket → app. `PLAYING → stop` on a track the proxy still owns fires `track_ended`, which makes the player start the next queue item (fallback when no next track is armed).
 
-**Gapless (LMS)**: the player arms the next queue item → `LMSBackend.set_next_track()` → `playlist add qobuz://<next>.flac`, so the LMS playlist is `[current, next]` and LMS/squeezelite chain them. When the poll sees LMS's current item become the armed URL, the backend fires `next_track_started` (player updates the current track and re-arms the following one) and deletes the finished item. `clear_next_track()` deletes the armed item by index, except when LMS already plays it. Details and edge cases: `docs/DESIGN.md` §4.4.
+**LMS CLI events**: `LMSBackend._events_loop` keeps a TCP connection to `lms_cli_port` subscribed to `playlist,pause,mixer,client`. A line for our player only invalidates the status cache and wakes the state loop — notifications are never interpreted, `status` stays the single source of truth. While events flow, status reads are cached up to 5 s and the position is extrapolated. On loss: immediate fallback to 1 s polling and reconnection with backoff; after each subscribe the state loop resyncs once.
+
+**Gapless (LMS)**: the player arms the next queue item → `LMSBackend.set_next_track()` → `playlist add qobuz://<next>.flac`, so the LMS playlist is `[current, next]` and LMS/squeezelite chain them. When the state loop sees LMS's current item become the armed URL, the backend fires `next_track_started` (player updates the current track and re-arms the following one) and deletes the finished item. `clear_next_track()` does not delete right away: the item becomes `_orphan_url` for `REARM_GRACE_SECONDS`, so the frequent clear + re-arm of the *same* track keeps the LMS item untouched; otherwise it is deleted by the state loop (or immediately when a different track is armed). If LMS reaches a cleared track first, the backend reports `track_ended` and the player plays its real next track. Details and edge cases: `docs/DESIGN.md` §4.5.
 
 **Ownership rule (LMS)**: the backend owns the player only while LMS's current item is the `qobuz://` URL it started or the armed next one. When a user plays something else from LMS, the backend releases the player without `track_ended` (the Qobuz queue does not advance) and never sends `stop` to LMS afterwards. A grace period after `play()` ignores transient LMS states while the URL resolves.
 
@@ -85,7 +87,7 @@ With `max_quality: auto`, DLNA queries device capabilities (`capabilities.py`); 
 
 1. CLI arguments (highest) → 2. Environment variables → 3. YAML config file → 4. Code defaults
 
-LMS settings: `backend.lms.{host,port,player}` or per speaker `lms_host` / `lms_port` / `lms_player` (YAML); `QOBUZPROXY_LMS_HOST`, `QOBUZPROXY_LMS_PORT`, `QOBUZPROXY_LMS_PLAYER` (env, comma-separated for several speakers); `--lms-host`, `--lms-port`, `--lms-player` (CLI). Adding a field means touching `config.py` (dataclasses, YAML, env, validation, serialization), `speaker.py` (`_build_component_config`, status), `app.py` (add/edit speaker API) and `cli.py`.
+LMS settings: `backend.lms.{host,port,player,cli_port}` or per speaker `lms_host` / `lms_port` / `lms_player` / `lms_cli_port` (YAML); `QOBUZPROXY_LMS_HOST`, `QOBUZPROXY_LMS_PORT`, `QOBUZPROXY_LMS_PLAYER`, `QOBUZPROXY_LMS_CLI_PORT` (env, comma-separated for several speakers); `--lms-host`, `--lms-port`, `--lms-player`, `--lms-cli-port` (CLI). `lms_cli_port: 0` disables events. Adding a field means touching `config.py` (dataclasses, YAML, env, validation, serialization), `speaker.py` (`_build_component_config`, status), `app.py` (add/edit speaker API) and `cli.py`.
 
 Other key env vars: `QOBUZ_AUTH_TOKEN`, `QOBUZ_USER_ID`, `QOBUZ_MAX_QUALITY`, `QOBUZPROXY_BACKEND`, `QOBUZPROXY_DEVICE_NAME`, `QOBUZPROXY_DLNA_IP`, `QOBUZPROXY_AUDIO_DEVICE`, `QOBUZPROXY_LOG_LEVEL`
 
@@ -103,8 +105,8 @@ The web UI "Add speaker" form only supports the DLNA and local backends; LMS spe
 
 - `asyncio_mode = "auto"` in pyproject.toml — no `@pytest.mark.asyncio` decorators needed
 - Tests mirror source structure in `tests/`
-- LMS backend tests run against an in-process fake LMS (`tests/backends/test_lms_backend.py`) with patched timings (`POLL_INTERVAL_SECONDS`, `PLAYBACK_START_GRACE_PERIOD_SECONDS`, `STATUS_CACHE_SECONDS`). `FakeLMS` models a real playlist: `finish_current()` chains to the next item or stops, `replace()` simulates another LMS controller, deleting the playing item stops playback. Extend it rather than hitting a real server.
-- When changing gapless or ownership logic, check that a test fails with the logic disabled, not only that it passes.
+- LMS backend tests run against an in-process fake LMS (`tests/backends/test_lms_backend.py`) with patched timings (`POLL_INTERVAL_SECONDS`, `EVENT_POLL_INTERVAL_SECONDS`, `PLAYBACK_START_GRACE_PERIOD_SECONDS`, `STATUS_CACHE_SECONDS`, `REARM_GRACE_SECONDS`, `EVENTS_RECONNECT_MIN_SECONDS`). `FakeLMS` models a real playlist: `finish_current()` chains to the next item or stops, `replace()` simulates another LMS controller, deleting the playing item stops playback. It also runs a CLI server: `start_cli()`, `notify(...)` pushes a player notification, `drop_cli_clients()` simulates a lost connection; `status_requests` counts reads. `_connected()` disables events by default (`cli_port=0`); event tests use `_connected_with_events()` with the `slow_polling` fixture so only events can explain a reaction. Extend it rather than hitting a real server.
+- When changing gapless, ownership or events logic, check that a test fails with the logic disabled, not only that it passes.
 - Playback behavior still needs a manual check on a real LMS + player + Qobuz app.
 
 ## Commit Convention
@@ -133,6 +135,14 @@ curl -s -d '{"id":1,"method":"slim.request","params":["<player-mac>",["status","
 
 `mode` (play/pause/stop), `time` (seconds), `playlist_cur_index` and `playlist_loop[].url` are what the backend reads. While Qobuz Connect plays, the playlist should be `[current]` or `[current, next]`; the backend logs every arm and transition on lines starting with `Gapless:`.
 
+To watch LMS events (what the backend subscribes to):
+
+```bash
+printf 'subscribe playlist,pause,mixer,client\n' | nc <lms-host> 9090
+```
+
+Logs: `Listening to LMS events on …` when subscribed, `LMS events lost (…), falling back to polling` on loss.
+
 ### Position Tracking Data Flow
 
 ```
@@ -152,9 +162,10 @@ The protocol uses `Position { timestamp: fixed64, value: uint32 }`. The app inte
 2. **"LMS player not found" at startup**: wrong `lms_player` (MAC or exact name) or LMS unreachable on `lms_port`
 3. **Track does not start on LMS**: LMS Qobuz plugin not logged in, or account without access to the track; check the LMS server log
 4. **Queue does not advance**: another LMS controller changed the player's playlist (takeover → released on purpose), or LMS repeat re-enabled
-5. **Gap between tracks**: no `Gapless: queued next track in LMS` line (the Qobuz app sent no next track, the same track repeats, or foreign items follow the current one in the LMS playlist), or a re-arm (`delete` + `add` of the same track) landed in the last seconds of the track — see DESIGN §4.4 known limitation
-6. **State not updating**: `_playback_monitor_loop` only polls when `_state == PlaybackState.PLAYING`
-7. **Protocol encoding**: Log values passed to `encode_state_update()` — binary issues are invisible otherwise
+5. **Gap between tracks**: no `Gapless: queued next track in LMS` line (the Qobuz app sent no next track, the same track repeats, or foreign items follow the current one in the LMS playlist) — see DESIGN §4.5
+6. **Slow reaction to LMS-side changes**: no `Listening to LMS events` line (CLI port wrong, blocked, or `lms_cli_port: 0`) → polling mode
+7. **State not updating**: `_playback_monitor_loop` only polls when `_state == PlaybackState.PLAYING`
+8. **Protocol encoding**: Log values passed to `encode_state_update()` — binary issues are invisible otherwise
 
 ### Known Issues
 

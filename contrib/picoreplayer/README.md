@@ -75,6 +75,7 @@ speakers:
     lms_host: 127.0.0.1
     lms_port: 9000
     lms_player: "00:11:22:33:44:55"
+    lms_cli_port: 9090   # LMS change events; 0 = polling only
 ```
 
 ```sh
@@ -140,3 +141,6 @@ cp app/contrib/picoreplayer/*.sh . && chmod 755 *.sh
 - **Gap between tracks**: check that the log shows `Gapless: queued next track in LMS`
   and `Gapless: LMS moved to the next track`:
   `grep Gapless /tmp/qconnect-lms/qconnect-lms.log`.
+- **Slow reaction to changes made in LMS**: check for `Listening to LMS events on
+  127.0.0.1:9090` in the log; `LMS events lost` means it fell back to polling (it
+  reconnects by itself).

@@ -23,8 +23,10 @@ that adds an **`lms` backend**. The upstream DLNA and local-audio backends are k
   `qobuz://<track_id>.flac` on that player. **Audio never goes through the proxy**:
   LMS and its Qobuz plugin fetch and stream the track, so LMS's format preferences,
   transcoding and player sync keep working.
-- Playback state, position and volume are polled back from LMS and reported to the
-  Qobuz app.
+- Playback state, position and volume are read back from LMS and reported to the
+  Qobuz app. **LMS change events** (CLI port 9090) make it react immediately to
+  changes made on the LMS side (pause from another remote, track change) and avoid
+  constant polling; without them it falls back to polling every second.
 - **Gapless**: the next track of the Qobuz queue is added to the LMS playlist in
   advance, so LMS chains tracks without a gap (live albums, classical, DJ mixes).
 - If you start something else on the player from LMS (a radio, your library...), the
@@ -40,7 +42,8 @@ See [docs/DESIGN.md](docs/DESIGN.md) for the technical design.
 - An active Qobuz subscription.
 - An always-on machine on the **same LAN** as the phone running the Qobuz app, with
   Python 3.10+ (or Docker). It can be the LMS host itself or any other machine.
-- Network access from that machine to the LMS web port (default `9000`).
+- Network access from that machine to the LMS web port (default `9000`) and,
+  recommended, to the LMS CLI port (default `9090`, enabled by default in LMS).
 
 ## Installation
 
@@ -86,6 +89,7 @@ speakers:
     lms_host: "192.168.1.10"         # LMS server address
     lms_port: 9000                   # LMS web / JSON-RPC port
     lms_player: "00:11:22:33:44:55"  # player MAC address, or its exact LMS name
+    lms_cli_port: 9090               # LMS CLI port for change events (0 = polling only)
 
   - name: "Kitchen (LMS)"
     backend: lms
@@ -102,8 +106,9 @@ curl -s -d '{"id":1,"method":"slim.request","params":["",["players","0","50"]]}'
 
 A single speaker can also be configured with environment variables:
 `QOBUZPROXY_BACKEND=lms`, `QOBUZPROXY_DEVICE_NAME`, `QOBUZPROXY_LMS_HOST`,
-`QOBUZPROXY_LMS_PORT`, `QOBUZPROXY_LMS_PLAYER` (see `.env.example`; comma-separated
-values define several speakers).
+`QOBUZPROXY_LMS_PORT`, `QOBUZPROXY_LMS_PLAYER`, `QOBUZPROXY_LMS_CLI_PORT` (see
+`.env.example`; comma-separated values define several speakers), or command-line
+options (`--backend-type lms --lms-host … --lms-player … --lms-cli-port …`).
 
 > LMS speakers are configured in `config.yaml` or environment variables. The web UI
 > "Add speaker" form only knows the upstream DLNA and local backends.
@@ -129,6 +134,9 @@ what your player supports.
   be on the same LAN/VLAN as your phone. In Docker, use `--network host`.
 - The app then connects to the device's HTTP port (auto-assigned from `8690`, one
   per speaker); allow it in your firewall on private networks.
+- QobuzConnectLMS connects to LMS on the JSON-RPC port (`9000`) and the CLI port
+  (`9090`). If the CLI is unreachable it keeps working by polling and retries in the
+  background; the log shows `Listening to LMS events on …` when events are active.
 - Windows works for testing (Ctrl+C to stop), Linux is the intended target.
 
 ## Known limitations
@@ -140,8 +148,7 @@ what your player supports.
   player.
 - Gapless is skipped when the same track is queued twice in a row (it is restarted
   normally instead) or when other items follow the current one in the LMS playlist.
-- If the Qobuz app updates the queue in the very last seconds of a track, that one
-  transition may not be gapless.
+- LMS password protection is not supported.
 - LMS player groups/sync are driven by LMS: pick the group's master player.
 
 ## Development
