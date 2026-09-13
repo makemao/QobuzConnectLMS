@@ -212,6 +212,12 @@ Environment Variables:
         metavar="TEXT",
         help="LMS player MAC address or exact name",
     )
+    lms_group.add_argument(
+        "--lms-cli-port",
+        type=int,
+        metavar="INT",
+        help="LMS CLI port for change events (default: 9090, 0 = polling only)",
+    )
 
     # Backend type
     parser.add_argument(
@@ -280,6 +286,7 @@ def args_to_dict(args: argparse.Namespace) -> dict:
         "lms_host": ("backend", "lms", "host"),
         "lms_port": ("backend", "lms", "port"),
         "lms_player": ("backend", "lms", "player"),
+        "lms_cli_port": ("backend", "lms", "cli_port"),
         "backend_type": ("backend", "type"),
         "http_port": ("server", "http_port"),
         "proxy_port": ("backend", "dlna", "proxy_port"),

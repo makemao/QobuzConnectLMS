@@ -164,6 +164,7 @@ class Speaker:
             config_dict["lms_host"] = self._config.lms_host
             config_dict["lms_port"] = self._config.lms_port
             config_dict["lms_player"] = self._config.lms_player
+            config_dict["lms_cli_port"] = self._config.lms_cli_port
 
         return {
             "id": slugify_name(self._config.name),
@@ -208,6 +209,7 @@ class Speaker:
                     host=self._config.lms_host,
                     port=self._config.lms_port,
                     player=self._config.lms_player,
+                    cli_port=self._config.lms_cli_port,
                 ),
             ),
             server=ServerConfig(

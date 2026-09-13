@@ -1,6 +1,7 @@
-"""Tests for the Lyrion Music Server backend, against a fake LMS JSON-RPC server."""
+"""Tests for the Lyrion Music Server backend, against a fake LMS (JSON-RPC + CLI events)."""
 
 import asyncio
+import urllib.parse
 from typing import Any
 
 import pytest
@@ -15,15 +16,52 @@ MAC = "00:11:22:33:44:55"
 
 
 class FakeLMS:
-    """Minimal LMS: one player with a playlist, JSON-RPC commands recorded."""
+    """Minimal LMS: one player with a playlist, JSON-RPC commands recorded, CLI events."""
 
     def __init__(self) -> None:
         self.commands: list[list[Any]] = []
+        self.status_requests = 0
         self.mode = "stop"
         self.playlist: list[str] = []
         self.cur = 0
         self.time = 0.0
         self.volume = 40
+        self.cli_server: asyncio.Server | None = None
+        self.cli_clients: list[asyncio.StreamWriter] = []
+        self.subscriptions: list[str] = []
+
+    # --- LMS CLI (port 9090) -------------------------------------------------
+
+    async def start_cli(self) -> int:
+        self.cli_server = await asyncio.start_server(self._cli_client, "127.0.0.1", 0)
+        return int(self.cli_server.sockets[0].getsockname()[1])
+
+    async def _cli_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.cli_clients.append(writer)
+        while line := await reader.readline():
+            text = line.decode().strip()
+            if text.startswith("subscribe "):
+                self.subscriptions.append(text)
+                writer.write((urllib.parse.quote(text, safe=" ") + "\n").encode())
+                await writer.drain()
+
+    async def notify(self, *tokens: str, player: str = MAC) -> None:
+        """Push a player notification to subscribed CLI clients."""
+        line = " ".join(urllib.parse.quote(t, safe="") for t in (player, *tokens)) + "\n"
+        for writer in self.cli_clients:
+            writer.write(line.encode())
+            await writer.drain()
+
+    async def drop_cli_clients(self) -> None:
+        for writer in self.cli_clients:
+            writer.close()
+        self.cli_clients.clear()
+
+    async def stop_cli(self) -> None:
+        await self.drop_cli_clients()
+        if self.cli_server:
+            self.cli_server.close()
+            await self.cli_server.wait_closed()
 
     def replace(self, url: str) -> None:
         """Another LMS controller loads something else on the player."""
@@ -48,6 +86,7 @@ class FakeLMS:
                 "players_loop": [{"playerid": MAC, "name": "Living Room"}],
             }
         elif cmd[0] == "status":
+            self.status_requests += 1
             result = {
                 "mode": self.mode,
                 "time": self.time,
@@ -86,17 +125,23 @@ async def lms(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(lms_module, "POLL_INTERVAL_SECONDS", 0.05)
     monkeypatch.setattr(lms_module, "PLAYBACK_START_GRACE_PERIOD_SECONDS", 0.0)
     monkeypatch.setattr(lms_module, "STATUS_CACHE_SECONDS", 0.0)
+    monkeypatch.setattr(lms_module, "REARM_GRACE_SECONDS", 0.2)
+    monkeypatch.setattr(lms_module, "EVENTS_RECONNECT_MIN_SECONDS", 0.1)
     fake = FakeLMS()
     app = web.Application()
     app.router.add_post("/jsonrpc.js", fake.handle)
     server = TestServer(app)
     await server.start_server()
     yield fake, server
+    await fake.stop_cli()
     await server.close()
 
 
-async def _connected(server: TestServer, player: str = "Living Room") -> LMSBackend:
-    backend = LMSBackend(host=server.host, port=server.port, player_id=player)
+async def _connected(
+    server: TestServer, player: str = "Living Room", cli_port: int = 0
+) -> LMSBackend:
+    """Backend on the fake LMS; LMS CLI events are off unless a CLI port is given."""
+    backend = LMSBackend(host=server.host, port=server.port, player_id=player, cli_port=cli_port)
     assert await backend.connect()
     return backend
 
@@ -242,18 +287,70 @@ async def test_last_track_without_next_still_ends_naturally(lms) -> None:
     await backend.disconnect()
 
 
-async def test_clear_next_track_removes_it_from_lms(lms) -> None:
+def _deletes(fake: FakeLMS) -> list[list[Any]]:
+    return [c for c in fake.commands if c[:2] == ["playlist", "delete"]]
+
+
+async def test_cleared_next_track_is_removed_after_grace(lms) -> None:
     fake, server = lms
     backend = await _connected(server)
     await backend.play("", _meta("1"))
     assert await backend.set_next_track("", _meta("2"))
     await backend.clear_next_track()
-    assert fake.playlist == ["qobuz://1.flac"]
+    assert fake.playlist == ["qobuz://1.flac", "qobuz://2.flac"]  # not yet: re-arm window
+    await _wait_for(lambda: fake.playlist == ["qobuz://1.flac"])
     assert fake.mode == "play"
-    # Re-arming a different next track replaces the old one
+    await backend.disconnect()
+
+
+async def test_rearming_same_track_keeps_the_lms_item(lms) -> None:
+    fake, server = lms
+    backend = await _connected(server)
+    await backend.play("", _meta("1"))
+    assert await backend.set_next_track("", _meta("2"), queue_item_id=1)
+    # The Qobuz app resends the queue: the player clears and re-arms the same track
+    await backend.clear_next_track()
+    assert await backend.set_next_track("", _meta("2"), queue_item_id=2)
+    await asyncio.sleep(0.4)  # past the removal grace
+    assert fake.playlist == ["qobuz://1.flac", "qobuz://2.flac"]
+    assert len(_adds(fake)) == 1
+    assert not _deletes(fake)
+    await backend.disconnect()
+
+
+async def test_arming_a_different_track_replaces_the_cleared_one(lms) -> None:
+    fake, server = lms
+    backend = await _connected(server)
+    await backend.play("", _meta("1"))
     assert await backend.set_next_track("", _meta("2"))
+    await backend.clear_next_track()
     assert await backend.set_next_track("", _meta("4"))
     assert fake.playlist == ["qobuz://1.flac", "qobuz://4.flac"]
+    # Arming over an armed track also replaces it
+    assert await backend.set_next_track("", _meta("5"))
+    assert fake.playlist == ["qobuz://1.flac", "qobuz://5.flac"]
+    await backend.disconnect()
+
+
+async def test_lms_reaching_a_cleared_track_hands_back_to_the_player(
+    lms, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake, server = lms
+    monkeypatch.setattr(lms_module, "REARM_GRACE_SECONDS", 30.0)
+    backend = await _connected(server)
+    ended: list[bool] = []
+    started: list[bool] = []
+    backend.on_track_ended(lambda: ended.append(True))
+    backend.on_next_track_started(lambda: started.append(True))
+    await backend.play("", _meta("1"))
+    assert await backend.set_next_track("", _meta("2"))
+    await backend.clear_next_track()
+    fake.finish_current()  # track 1 ends before the cleared track 2 is removed
+    await _wait_for(lambda: ended)
+    assert not started  # the queue no longer wants track 2: the player decides what plays
+    # The player then plays its real next track, replacing the LMS playlist
+    await backend.play("", _meta("7"))
+    assert fake.playlist == ["qobuz://7.flac"]
     await backend.disconnect()
 
 
@@ -303,4 +400,109 @@ async def test_play_discards_armed_next_track(lms) -> None:
     assert await backend.set_next_track("", _meta("2"))
     assert fake.playlist == ["qobuz://9.flac", "qobuz://2.flac"]
     assert not started
+    await backend.disconnect()
+
+
+# =============================================================================
+# LMS CLI events
+# =============================================================================
+
+
+@pytest.fixture
+def slow_polling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling too slow to notice anything during a test: only events can."""
+    monkeypatch.setattr(lms_module, "POLL_INTERVAL_SECONDS", 30.0)
+    monkeypatch.setattr(lms_module, "EVENT_POLL_INTERVAL_SECONDS", 30.0)
+
+
+async def _connected_with_events(fake: FakeLMS, server: TestServer) -> LMSBackend:
+    cli_port = await fake.start_cli()
+    backend = await _connected(server, cli_port=cli_port)
+    await _wait_for(lambda: backend._events_connected and fake.subscriptions)
+    return backend
+
+
+async def test_events_subscribe_to_player_notifications(lms) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    assert fake.subscriptions == ["subscribe playlist,pause,mixer,client"]
+    await backend.disconnect()
+
+
+async def test_event_wakes_state_loop_for_gapless_transition(lms, slow_polling) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    started: list[bool] = []
+    backend.on_next_track_started(lambda: started.append(True))
+    await backend.play("", _meta("1"))
+    assert await backend.set_next_track("", _meta("2"))
+
+    fake.finish_current()
+    await asyncio.sleep(0.3)
+    assert not started  # polling alone would take 30 s
+
+    await fake.notify("playlist", "newsong", "Song", "1")
+    await _wait_for(lambda: started, timeout=1.0)
+    await backend.disconnect()
+
+
+async def test_event_wakes_state_loop_for_pause_from_lms(lms, slow_polling) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    states: list[PlaybackState] = []
+    backend.on_state_change(states.append)
+    await backend.play("", _meta("1"))
+    fake.mode = "pause"  # paused from another LMS controller
+    await fake.notify("pause", "1")
+    await _wait_for(lambda: PlaybackState.PAUSED in states, timeout=1.0)
+    await backend.disconnect()
+
+
+async def test_events_for_other_players_are_ignored(lms, slow_polling) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    await backend.play("", _meta("1"))
+    await asyncio.sleep(0.1)
+    before = fake.status_requests
+    await fake.notify("playlist", "newsong", "Other", "0", player="aa:bb:cc:dd:ee:ff")
+    await asyncio.sleep(0.3)
+    assert fake.status_requests == before
+    await backend.disconnect()
+
+
+async def test_with_events_status_reads_are_shared_and_position_extrapolated(
+    lms, slow_polling
+) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    await backend.play("", _meta("1"))
+    await backend.get_state()
+    before = fake.status_requests
+    first = await backend.get_position()
+    for _ in range(10):  # upstream's player asks twice a second
+        await backend.get_state()
+        await asyncio.sleep(0.03)
+    second = await backend.get_position()
+    assert fake.status_requests == before  # served from the event-refreshed cache
+    assert second > first  # moving forward between LMS reads
+    await backend.disconnect()
+
+
+async def test_losing_events_falls_back_to_polling_then_reconnects(
+    lms, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake, server = lms
+    monkeypatch.setattr(lms_module, "EVENT_POLL_INTERVAL_SECONDS", 30.0)
+    monkeypatch.setattr(lms_module, "EVENTS_RECONNECT_MIN_SECONDS", 0.5)
+    backend = await _connected_with_events(fake, server)
+    ended: list[bool] = []
+    backend.on_track_ended(lambda: ended.append(True))
+    await backend.play("", _meta("1"))
+
+    await fake.drop_cli_clients()
+    await _wait_for(lambda: not backend._events_connected)
+    fake.finish_current()  # no event sent: only fallback polling (0.05 s) can see it
+    await _wait_for(lambda: ended, timeout=1.0)
+
+    await _wait_for(lambda: backend._events_connected and len(fake.subscriptions) == 2)
     await backend.disconnect()

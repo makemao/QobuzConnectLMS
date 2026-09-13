@@ -60,6 +60,7 @@ ENV_MAPPINGS = {
     "QOBUZPROXY_LMS_HOST": ("backend", "lms", "host"),
     "QOBUZPROXY_LMS_PORT": ("backend", "lms", "port"),
     "QOBUZPROXY_LMS_PLAYER": ("backend", "lms", "player"),
+    "QOBUZPROXY_LMS_CLI_PORT": ("backend", "lms", "cli_port"),
     # Server
     "QOBUZPROXY_HTTP_PORT": ("server", "http_port"),
     "QOBUZPROXY_PROXY_PORT": ("backend", "dlna", "proxy_port"),
@@ -122,6 +123,7 @@ class LMSConfig:
     host: str = ""
     port: int = 9000
     player: str = ""  # Player MAC address or name
+    cli_port: int = 9090  # LMS CLI port for change events, 0 = polling only
 
 
 @dataclass
@@ -169,6 +171,7 @@ class SpeakerConfig:
     lms_host: str = ""
     lms_port: int = 9000
     lms_player: str = ""
+    lms_cli_port: int = 9090
 
 
 @dataclass
@@ -235,6 +238,8 @@ def validate_config(config: Config) -> None:
             errors.append("LMS player (MAC or name) is required when backend type is 'lms'")
         if not validate_port(config.backend.lms.port):
             errors.append(f"Invalid LMS port: {config.backend.lms.port}")
+        if config.backend.lms.cli_port and not validate_port(config.backend.lms.cli_port):
+            errors.append(f"Invalid LMS CLI port: {config.backend.lms.cli_port}")
     elif config.backend.type != "stub":
         errors.append(f"Unknown backend type: {config.backend.type}")
 
@@ -289,6 +294,7 @@ def speaker_config_to_dict(sc: SpeakerConfig) -> dict:
         d["lms_host"] = sc.lms_host
         d["lms_port"] = sc.lms_port
         d["lms_player"] = sc.lms_player
+        d["lms_cli_port"] = sc.lms_cli_port
     return d
 
 
@@ -311,6 +317,7 @@ def _single_speaker_from_config(config: Config) -> SpeakerConfig:
         lms_host=config.backend.lms.host,
         lms_port=config.backend.lms.port,
         lms_player=config.backend.lms.player,
+        lms_cli_port=config.backend.lms.cli_port,
     )
 
 
@@ -383,6 +390,8 @@ def _validate_speakers(speakers: list[SpeakerConfig]) -> None:
             errors.append(f"Speaker '{s.name}': DLNA IP address is required")
         if s.backend_type == "lms" and not (s.lms_host and s.lms_player):
             errors.append(f"Speaker '{s.name}': lms_host and lms_player are required")
+        if s.lms_cli_port and not validate_port(s.lms_cli_port):
+            errors.append(f"Speaker '{s.name}': invalid LMS CLI port {s.lms_cli_port}")
         if s.backend_type not in ("dlna", "local", "lms", "stub"):
             errors.append(f"Speaker '{s.name}': unknown backend type '{s.backend_type}'")
         if s.http_port and not validate_port(s.http_port):
@@ -421,6 +430,7 @@ def _parse_yaml_speakers(raw_speakers: list[dict], config: Config) -> list[Speak
             lms_host=raw.get("lms_host", ""),
             lms_port=int(raw.get("lms_port", 9000)),
             lms_player=str(raw.get("lms_player", "")),
+            lms_cli_port=int(raw.get("lms_cli_port", 9090)),
         )
         speakers.append(speaker)
     return speakers
@@ -471,6 +481,7 @@ def _parse_env_speakers(config: Config) -> list[SpeakerConfig]:
     lms_hosts = _split_env_padded("QOBUZPROXY_LMS_HOST", count, "")
     lms_ports_raw = _split_env_padded("QOBUZPROXY_LMS_PORT", count, "9000")
     lms_players = _split_env_padded("QOBUZPROXY_LMS_PLAYER", count, "")
+    lms_cli_ports_raw = _split_env_padded("QOBUZPROXY_LMS_CLI_PORT", count, "9090")
 
     speakers = []
     for i, name in enumerate(names):
@@ -489,6 +500,7 @@ def _parse_env_speakers(config: Config) -> list[SpeakerConfig]:
             lms_host=lms_hosts[i],
             lms_port=int(lms_ports_raw[i]),
             lms_player=lms_players[i],
+            lms_cli_port=int(lms_cli_ports_raw[i]),
         )
         speakers.append(speaker)
 
@@ -682,6 +694,7 @@ def dict_to_config(d: dict) -> Config:
             config.backend.lms.host = lms.get("host", config.backend.lms.host)
             config.backend.lms.port = int(lms.get("port", config.backend.lms.port))
             config.backend.lms.player = str(lms.get("player", config.backend.lms.player))
+            config.backend.lms.cli_port = int(lms.get("cli_port", config.backend.lms.cli_port))
 
     # Server
     if "server" in d:

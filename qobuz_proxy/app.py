@@ -56,6 +56,7 @@ def _configured_speaker_status(sc: SpeakerConfig, status: str) -> dict:
         config_dict["lms_host"] = sc.lms_host
         config_dict["lms_port"] = sc.lms_port
         config_dict["lms_player"] = sc.lms_player
+        config_dict["lms_cli_port"] = sc.lms_cli_port
     return {
         "id": slugify_name(sc.name),
         "name": sc.name,
@@ -436,6 +437,7 @@ class QobuzProxy:
             lms_host=body.get("lms_host", ""),
             lms_port=int(body.get("lms_port", 9000)),
             lms_player=body.get("lms_player", ""),
+            lms_cli_port=int(body.get("lms_cli_port", 9090)),
         )
 
         assert self._api_client is not None
@@ -516,6 +518,7 @@ class QobuzProxy:
             lms_host=body.get("lms_host", old_config.lms_host),
             lms_port=int(body.get("lms_port", old_config.lms_port)),
             lms_player=body.get("lms_player", old_config.lms_player),
+            lms_cli_port=int(body.get("lms_cli_port", old_config.lms_cli_port)),
         )
 
         # Persist first: the edit is saved even if the restart below fails

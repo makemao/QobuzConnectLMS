@@ -92,6 +92,7 @@ class BackendFactory:
                 host=config.backend.lms.host,
                 port=config.backend.lms.port,
                 player=config.backend.lms.player,
+                cli_port=config.backend.lms.cli_port,
                 name=config.device.name,
             )
         else:
@@ -186,9 +187,10 @@ class BackendFactory:
         player: str,
         port: int = 9000,
         name: Optional[str] = None,
+        cli_port: int = 9090,
     ) -> AudioBackend:
         """Create a Lyrion Music Server backend driving one LMS player."""
-        backend = LMSBackend(host=host, port=port, player_id=player, name=name)
+        backend = LMSBackend(host=host, port=port, player_id=player, name=name, cli_port=cli_port)
         if await backend.connect():
             return backend
         raise BackendNotFoundError(f"Failed to connect to LMS player '{player}' at {host}:{port}")

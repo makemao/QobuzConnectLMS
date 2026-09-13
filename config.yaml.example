@@ -28,6 +28,7 @@ speakers:
     lms_host: "192.168.1.10"    # LMS server address
     lms_port: 9000              # LMS web/JSON-RPC port
     lms_player: "00:11:22:33:44:55"  # Player MAC address, or its exact LMS name
+    lms_cli_port: 9090          # LMS CLI port for change events (0 = polling only)
 
   # - name: "Kitchen (LMS)"
   #   backend: lms
