@@ -136,11 +136,13 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
   itself) while the music is not playing. Changing the volume from the Qobuz app or LMS
   web UI also changes the film's volume.
 - **TV off (Shield asleep)**: the Shield remote is a music remote: volume, play/pause, next
-  (fast forward), previous (rewind). Measured: the keys are reported while the Shield
-  sleeps and the volume keys do not wake it; its power-state query does not wake it
-  either. That the media keys do not wake it is still to be confirmed.
-- **Other remote keys** (Home, Menu, Search, Power) keep their normal role and may wake
-  the Shield.
+  (fast forward), previous (rewind), mute (microphone). Measured: the keys are reported
+  while the Shield sleeps, and none of these wakes it; its power-state query does not
+  wake it either.
+- **Keys that wake the Shield**: back, the arrows and center button, the shortcut key,
+  power. After such a key with the TV off, the Shield is awake: media keys and the
+  microphone go to it (film / Assistant) until it sleeps again; put it back to sleep with
+  power.
 - **Automatic switch**: starting music on the Pi during a film may make the switch select
   the Pi; this is why fast forward / rewind act on the film, not on the music, while the TV
   is on and the music is not playing.
