@@ -139,7 +139,9 @@ what your player supports.
   track (plus the next one, for gapless) and turns LMS repeat and shuffle off for that
   player.
 - Gapless is skipped when the same track is queued twice in a row (it is restarted
-  normally instead).
+  normally instead) or when other items follow the current one in the LMS playlist.
+- If the Qobuz app updates the queue in the very last seconds of a track, that one
+  transition may not be gapless.
 - LMS player groups/sync are driven by LMS: pick the group's master player.
 
 ## Development

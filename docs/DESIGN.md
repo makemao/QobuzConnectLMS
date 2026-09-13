@@ -240,7 +240,11 @@ with skips and queue edits during playback.
 
 ## 8. Future work
 
-- Event-driven state via the LMS CLI `subscribe` (port 9090) instead of polling.
+- Gapless re-arm: defer `clear_next_track`'s deletion so that re-arming the same track
+  keeps the existing LMS item (§4.4 known limitation).
+- Event-driven state via the LMS CLI `subscribe` (port 9090) instead of polling: instant
+  reaction to LMS-side changes and track transitions, no traffic while idle; requires a
+  persistent, reconnecting connection and keeping a slow poll as a safety net.
 - LMS authentication (HTTP basic auth).
 - Add LMS player discovery to the web UI "Add speaker" form.
 - piCorePlayer: installed as a self-contained folder with start/stop scripts

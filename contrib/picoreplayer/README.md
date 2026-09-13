@@ -137,3 +137,6 @@ cp app/contrib/picoreplayer/*.sh . && chmod 755 *.sh
 - **`LMS player '…' not found`**: wrong MAC/name in `data/config.yaml`.
 - **Device not in the Qobuz app**: phone and piCorePlayer must be on the same LAN;
   piCorePlayer's own mDNS responder (`pcpmdnsd`) can stay running alongside.
+- **Gap between tracks**: check that the log shows `Gapless: queued next track in LMS`
+  and `Gapless: LMS moved to the next track`:
+  `grep Gapless /tmp/qconnect-lms/qconnect-lms.log`.
