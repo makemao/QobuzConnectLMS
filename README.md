@@ -35,6 +35,11 @@ that adds an **`lms` backend**. The upstream DLNA and local-audio backends are k
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the technical design.
 
+Reference hi-fi setup it was validated on (NAS, Raspberry Pi / piCorePlayer, HiFiBerry
+Digi Pro, Devialet Phantom stereo pair) and how it works with its companion
+**[DevialetLMSBridge](https://github.com/makemao/DevialetLMSBridge)** (Phantom volume
+driven by LMS, optional Hue Tap Dial knob): [docs/SETUP.md](docs/SETUP.md).
+
 ## Requirements
 
 - Lyrion Music Server with the **Qobuz plugin** installed and logged in to your
