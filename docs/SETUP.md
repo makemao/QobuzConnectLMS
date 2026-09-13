@@ -84,8 +84,8 @@ Addresses and identifiers of the real installation are intentionally left out.
 |---|---|---|---|
 | LMS + squeezelite | piCorePlayer | music server and player | piCorePlayer |
 | **QobuzConnectLMS** | this repo | player selectable in the Qobuz app (Qobuz Connect) | `/mnt/mmcblk0p2/qconnect-lms/start.sh` |
-| **Volume bridge** | DevialetLMSBridge | LMS player volume → Phantom volume | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh` (planned, see §5) |
-| **Shield remote service** | DevialetLMSBridge | Shield remote keys → LMS volume and music | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh remote` (planned) |
+| **Volume bridge** | DevialetLMSBridge | LMS player volume → Phantom volume | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh` |
+| **Shield remote service** | DevialetLMSBridge | Shield remote keys → LMS volume and music | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh remote` |
 | Tap Dial service | DevialetLMSBridge | alternative: Hue Tap Dial knob → LMS commands | `start.sh tapdial` (not installed) |
 
 Each project lives in its own folder on the persistent SD partition, with its own start /
@@ -162,7 +162,7 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
 | Component | Status |
 |---|---|
 | QobuzConnectLMS (Qobuz Connect, gapless, LMS events) | Deployed and validated by listening, including after reboot |
-| Volume bridge | The first version (`phantom_bridge.py`) runs in production; the DevialetLMSBridge rewrite (split-line fix, mute, startup alignment) is tested but **not deployed yet** |
+| Volume bridge | **Deployed** (replaces the first `phantom_bridge.py`, kept on the Pi as a fallback): split-line fix, mute, startup alignment of LMS and the Phantom to 20 % |
 | Shield (cinema) | HDMI fixed volume set, network debugging enabled, ADB key authorized; power state and remote keys read without waking it (measured) |
-| Shield remote service | Implemented and tested (fake device), `check` run against the real Shield; **not deployed yet** |
+| Shield remote service | **Deployed**. First use showed a network connection to the Shield that hung without closing: fixed with a heartbeat, and volume up made safe (cap, repeat limit, steps from the Phantom's real volume) |
 | Hue Tap Dial service | Kept as an alternative: implemented and tested without hardware; coordinator purchase on hold |
