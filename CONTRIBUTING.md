@@ -1,10 +1,21 @@
-# Contributing to QobuzProxy
+# Contributing to QobuzConnectLMS
 
 Thanks for helping! This is a small project maintained in spare time, and
-most testing means sitting in front of a real speaker with the Qobuz app
+most testing means sitting in front of a real LMS player with the Qobuz app
 open. The guidelines below are here so a change can be understood, tested,
 and released quickly. None of them are meant to be gatekeeping, they just
 make the review a lot easier for everyone.
+
+## LMS backend or upstream code?
+
+QobuzConnectLMS is a fork of [qobuz-proxy](https://github.com/leolobato/qobuz-proxy).
+
+- Changes to the **LMS backend** (`qobuz_proxy/backends/lms/`), its configuration,
+  or the fork's docs belong here. Read [docs/DESIGN.md](docs/DESIGN.md) first and
+  update it when the behavior changes.
+- Fixes to the **Qobuz Connect protocol, player, queue, DLNA or local backends**
+  are best sent to qobuz-proxy as well, so both projects benefit. A PR here that
+  merges or backports an upstream change is welcome; mention the upstream commit.
 
 ## One PR, one change
 
@@ -59,10 +70,14 @@ The PR description should answer, in this order:
    problem. "Refactor SET_STATE handling" is not.
 2. **Why it happened**, briefly, if you know.
 3. **What changed** in behavior. Not a list of functions edited.
-4. **How you tested it**, with the actual hardware. Name the renderer model
-   or audio device, the Qobuz app platform, and what you did. "Tests pass" is
-   necessary but not sufficient for anything touching playback, Connect, or
-   DLNA. If you could not test on hardware, say so explicitly.
+4. **How you tested it**, with the actual hardware. Name the LMS version, the
+   Qobuz plugin version, the player (squeezelite, piCorePlayer, Squeezebox…) or
+   other renderer, the Qobuz app platform, and what you did. "Tests pass" is
+   necessary but not sufficient for anything touching playback, Connect, LMS
+   or DLNA. If you could not test on hardware, say so explicitly.
+
+Do not include IP addresses, player MAC addresses, auth tokens or other details
+of your setup in code, tests, logs or descriptions.
 
 Link the issue the PR addresses. If there is no issue, the first paragraph of
 the description is the issue.
@@ -113,6 +128,6 @@ it.
 ## Review
 
 Expect a few questions, and possibly a request to split things up. Reviews can take a while since testing
-usually means sitting in front of a speaker. A PR that follows the guidelines above gets through much
+usually means sitting in front of a player. A PR that follows the guidelines above gets through much
 faster because it can be understood and tested in one sitting. Thanks for your patience, and for
 contributing!

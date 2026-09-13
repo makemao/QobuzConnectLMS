@@ -34,8 +34,8 @@ jobs:
           build-args: |
             GIT_COMMIT=${{ github.sha }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/qobuz-proxy:latest
-            ghcr.io/${{ github.repository_owner }}/qobuz-proxy:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/qobuzconnectlms:latest
+            ghcr.io/${{ github.repository_owner }}/qobuzconnectlms:${{ github.ref_name }}
 
   github-release:
     name: GitHub Release

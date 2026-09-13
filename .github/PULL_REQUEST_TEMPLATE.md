@@ -13,13 +13,16 @@ Fixes #
 
 ## How it was tested
 
-<!-- Which speaker or audio device, which Qobuz app (iOS, Android, desktop), and what you did.
-     Something like: "Sonos One + iOS app, skipped through a 20-track playlist twice, no stalls." -->
+<!-- Which LMS version and Qobuz plugin version, which player (squeezelite, piCorePlayer,
+     Squeezebox…), which Qobuz app (iOS, Android, desktop), and what you did.
+     Something like: "LMS 9.1.1 + Qobuz plugin 3.7.1, piCorePlayer, Android app: skipped through a
+     20-track playlist twice, let an album play to the end, started a radio from LMS mid-track." -->
 
-- [ ] Tested on a real speaker or audio device (described above)
-- [ ] `uv run pytest`, `ruff format`, `ruff check`, and `mypy` are clean
+- [ ] Tested on a real LMS server and player (described above)
+- [ ] `uv run pytest`, `ruff format`, `ruff check`, and `mypy` are clean (no new mypy errors)
 - [ ] New or changed behavior has tests
 - [ ] This PR does one thing, and the version wasn't bumped
+- [ ] No IP addresses, MAC addresses, tokens or other personal setup details in code, tests or logs
 
 <!-- If you couldn't test on hardware, that's okay, just leave the box unchecked and say why. -->
 

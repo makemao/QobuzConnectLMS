@@ -194,12 +194,31 @@ Environment Variables:
         help="Audio buffer size in frames (default: 2048)",
     )
 
+    # Lyrion Music Server Backend
+    lms_group = parser.add_argument_group("Lyrion Music Server Backend")
+    lms_group.add_argument(
+        "--lms-host",
+        metavar="TEXT",
+        help="LMS server address",
+    )
+    lms_group.add_argument(
+        "--lms-port",
+        type=int,
+        metavar="INT",
+        help="LMS web / JSON-RPC port (default: 9000)",
+    )
+    lms_group.add_argument(
+        "--lms-player",
+        metavar="TEXT",
+        help="LMS player MAC address or exact name",
+    )
+
     # Backend type
     parser.add_argument(
         "--backend-type",
-        choices=["dlna", "local"],
+        choices=["dlna", "local", "lms"],
         metavar="TYPE",
-        help="Audio backend type: dlna or local",
+        help="Audio backend type: dlna, local or lms",
     )
 
     # Server
@@ -258,6 +277,9 @@ def args_to_dict(args: argparse.Namespace) -> dict:
         "fixed_volume": ("backend", "dlna", "fixed_volume"),
         "audio_device": ("backend", "local", "device"),
         "audio_buffer_size": ("backend", "local", "buffer_size"),
+        "lms_host": ("backend", "lms", "host"),
+        "lms_port": ("backend", "lms", "port"),
+        "lms_player": ("backend", "lms", "player"),
         "backend_type": ("backend", "type"),
         "http_port": ("server", "http_port"),
         "proxy_port": ("backend", "dlna", "proxy_port"),
@@ -290,6 +312,8 @@ def log_config(config: Config) -> None:
         elif sc.backend_type == "local":
             logger.info(f"  Audio device: {sc.audio_device}")
             logger.info(f"  Buffer size: {sc.audio_buffer_size} frames")
+        elif sc.backend_type == "lms":
+            logger.info(f"  LMS player: {sc.lms_player} on {sc.lms_host}:{sc.lms_port}")
         logger.info(f"  HTTP server: {sc.bind_address}:{sc.http_port}")
         logger.info(f"  Max quality: {sc.max_quality}")
 

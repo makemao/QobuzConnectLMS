@@ -1,30 +1,28 @@
-# QobuzProxy Docker Compose Configuration
+# QobuzConnectLMS Docker Compose configuration
 #
 # IMPORTANT: network_mode: host is REQUIRED for mDNS to work.
-# This allows the Qobuz app to discover the device on your local network.
+# This allows the Qobuz app to discover the devices on your local network.
 # Without host networking, mDNS multicast packets won't reach the container.
 #
-# Alternative: Use macvlan network with a dedicated IP address on your LAN.
+# Alternative: use a macvlan network with a dedicated IP address on your LAN.
 #
 # Place your config.yaml in the data directory mounted at /data.
-# See config.yaml.example for multi-speaker configuration.
-
-version: "3.8"
+# See config.yaml.example for LMS speaker configuration.
 
 services:
-  qobuz-proxy:
-    image: ghcr.io/leolobato/qobuz-proxy:latest
-    # build: .  # Uncomment to build from local Dockerfile instead
+  qobuzconnectlms:
+    # Built locally: the upstream ghcr.io/leolobato/qobuz-proxy image has no LMS backend.
+    build: .
+    image: qobuzconnectlms:latest
+    # Or, once a release is tagged: ghcr.io/makemao/qobuzconnectlms:latest
 
-    container_name: qobuz-proxy
+    container_name: qobuzconnectlms
 
-    # REQUIRED: Host networking for mDNS multicast
-    # This exposes the container directly on the host's network
+    # REQUIRED: host networking for mDNS multicast
     network_mode: host
 
-    # /data contains config.yaml and credential cache
+    # /data contains config.yaml and the Qobuz credential cache
     volumes:
       - ./data:/data
 
-    # Restart policy
     restart: unless-stopped
