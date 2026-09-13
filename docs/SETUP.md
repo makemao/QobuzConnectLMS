@@ -25,11 +25,11 @@ Addresses and identifiers of the real installation are intentionally left out.
                                                       │  squeezelite ──► HiFiBerry Digi Pro (S/PDIF)  │
                                                       └───────────────────────┬──────────────────────┘
                                                                               │ optical (TOSLINK)
-┌─────────────────────────────┐   HDMI   ┌──────────────────────────────┐     ▼
-│ Full HD TV                   │ ◄─────── │ NVIDIA Shield (Android TV)    │  ┌──────────────────────┐
-└─────────────────────────────┘          │  films, series, apps          │─►│ S/PDIF switch (auto) │
-                                         └──────────────────────────────┘  └──────────┬───────────┘
-                                                        optical (TOSLINK)              │ optical
+┌───────────────┐ HDMI ┌─────────────────────┐ HDMI ┌──────────────────┐     ▼
+│ Full HD TV     │ ◄─── │ HDMI audio extractor │ ◄─── │ NVIDIA Shield     │  ┌──────────────────────┐
+└───────────────┘      │                      │      │ (Android TV 11)   │  │ S/PDIF switch (auto) │
+                       └──────────┬───────────┘      └──────────────────┘  └──────────┬───────────┘
+                                  └──────────── optical (TOSLINK) ──────────────┘      │ optical
                                                                                        ▼
                                                       ┌──────────────────────────────────────────────┐
                                                       │ Devialet Phantom I 103 dB (2020) — stereo pair│
@@ -47,8 +47,8 @@ Addresses and identifiers of the real installation are intentionally left out.
 | Music server | **Lyrion Music Server 9.1.1** on the Pi | Media folder `/mnt/MUSICLIB` (the NAS share); Qobuz plugin 3.7.1 with preferred format 27 (FLAC up to 24-bit/192 kHz); UPnP Bridge plugin installed |
 | Player | **squeezelite 2.0.0** (piCorePlayer build) | Output `hw:CARD=sndrpihifiberry`; LMS player **volume control: output level fixed at 100 %** (`digitalVolumeControl = 0`): the stream leaves the Pi unaltered |
 | Digital output | **HiFiBerry Digi Pro** (WM8804, `dtoverlay=hifiberry-digi-pro`) | S/PDIF, optical out; dedicated audio clocks (not the Pi's); up to 24/192 |
-| Cinema source | **NVIDIA Shield** (Android TV) connected to a **Full HD TV** over HDMI | Off (asleep) most of the time; optical audio out to the switch; *Network debugging* enabled so that the knob can pause a film (never used to wake it) |
-| Switch | **Automatic S/PDIF (optical) switch**, 2 inputs → 1 output | Pi and Shield in, Phantom out; selects the active input by itself |
+| Cinema source | **NVIDIA Shield** (Android TV 11) → **HDMI audio extractor** → **Full HD TV** | Off (asleep) most of the time. The extractor passes video to the TV over HDMI and sends the audio over optical to the switch. The Shield remote's volume keys change the Shield's own volume, not the Phantom's. *Network debugging* enabled so that the knob can pause a film (never used to wake it) |
+| Switch | **Automatic S/PDIF (optical) switch**, 2 inputs → 1 output | Pi (HiFiBerry) and HDMI extractor in, Phantom out; selects the active input by itself |
 | Link | Optical TOSLINK cables | Digital and galvanically isolated: no electrical path between the sources and the speakers |
 | Speakers | **Devialet Phantom I 103 dB** (2020 generation), stereo pair (leader = left, right), firmware DOS 2.19.1 (reported model: "Phantom 103 dB") | Receive the optical input on the leader and do the D/A conversion and amplification; volume controlled over the Devialet IP Control API. Other inputs available: AirPlay 2, Spotify Connect, UPnP, Roon Ready (RAAT), Bluetooth, second optical |
 
@@ -104,8 +104,8 @@ Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS  
                             │                                volume bridge ──IP Control API──► Phantom
                             │ network ADB (play/pause, only if awake)                            ▲
                             ▼                                                                    │
-                      NVIDIA Shield ──HDMI──► TV                                                  │
-                            └──optical──► S/PDIF switch (auto) ──optical────────────────────────┘
+                      NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV                  │
+                                                   └──optical──► S/PDIF switch (auto) ──optical──┘
 ```
 
 - **Everything goes through LMS.** QobuzConnectLMS and the Tap Dial only send LMS
@@ -131,6 +131,9 @@ Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS  
 - **Shield asleep**: the knob behaves as a music remote; the Shield is not contacted for
   volume or mute, and play/pause/previous/next only check its power state (read-only) —
   that this check does not wake it is to be confirmed on the device.
+- **Shield remote volume**: today it changes the Shield's own output volume, not the
+  Phantom's, so in cinema mode the Phantom volume has to be set from the Devialet app
+  (or from LMS / the knob). Capturing the remote's volume keys is being studied.
 - **Automatic switch**: starting music on the Pi during a film may make the switch select
   the Pi; this is why previous/next are ignored and play/pause targets the Shield while
   the TV is on.
