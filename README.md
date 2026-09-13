@@ -38,7 +38,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for the technical design.
 Reference hi-fi setup it was validated on (NAS, Raspberry Pi / piCorePlayer, HiFiBerry
 Digi Pro, Devialet Phantom stereo pair) and how it works with its companion
 **[DevialetLMSBridge](https://github.com/makemao/DevialetLMSBridge)** (Phantom volume
-driven by LMS, optional Hue Tap Dial knob): [docs/SETUP.md](docs/SETUP.md).
+driven by LMS, Android TV remote as master control): [docs/SETUP.md](docs/SETUP.md).
 
 ## Requirements
 

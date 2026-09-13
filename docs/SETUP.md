@@ -2,7 +2,7 @@
 
 The installation QobuzConnectLMS was built and validated on, and how it works together
 with its companion project **[DevialetLMSBridge](https://github.com/makemao/DevialetLMSBridge)**
-(volume of a Devialet Phantom driven by LMS, with an optional physical knob).
+(volume of a Devialet Phantom driven by LMS, with the Shield remote as master control).
 Addresses and identifiers of the real installation are intentionally left out.
 
 > The same overview is kept in DevialetLMSBridge's
@@ -47,7 +47,7 @@ Addresses and identifiers of the real installation are intentionally left out.
 | Music server | **Lyrion Music Server 9.1.1** on the Pi | Media folder `/mnt/MUSICLIB` (the NAS share); Qobuz plugin 3.7.1 with preferred format 27 (FLAC up to 24-bit/192 kHz); UPnP Bridge plugin installed |
 | Player | **squeezelite 2.0.0** (piCorePlayer build) | Output `hw:CARD=sndrpihifiberry`; LMS player **volume control: output level fixed at 100 %** (`digitalVolumeControl = 0`): the stream leaves the Pi unaltered |
 | Digital output | **HiFiBerry Digi Pro** (WM8804, `dtoverlay=hifiberry-digi-pro`) | S/PDIF, optical out; dedicated audio clocks (not the Pi's); up to 24/192 |
-| Cinema source | **NVIDIA Shield** (Android TV 11) → **HDMI audio extractor** → **Full HD TV** | Off (asleep) most of the time. The extractor passes video to the TV over HDMI and sends the audio over optical to the switch. The Shield remote's volume keys change the Shield's own volume, not the Phantom's. *Network debugging* enabled so that the knob can pause a film (never used to wake it) |
+| Cinema source | **NVIDIA Shield** (Android TV 11) → **HDMI audio extractor** → **Full HD TV** | Off (asleep) most of the time. The extractor passes video to the TV over HDMI and sends the audio over optical to the switch. Set to **HDMI fixed volume**. *Network debugging* enabled: its Bluetooth remote is read over network ADB to become the master control (never used to wake it) |
 | Switch | **Automatic S/PDIF (optical) switch**, 2 inputs → 1 output | Pi (HiFiBerry) and HDMI extractor in, Phantom out; selects the active input by itself |
 | Link | Optical TOSLINK cables | Digital and galvanically isolated: no electrical path between the sources and the speakers |
 | Speakers | **Devialet Phantom I 103 dB** (2020 generation), stereo pair (leader = left, right), firmware DOS 2.19.1 (reported model: "Phantom 103 dB") | Receive the optical input on the leader and do the D/A conversion and amplification; volume controlled over the Devialet IP Control API. Other inputs available: AirPlay 2, Spotify Connect, UPnP, Roon Ready (RAAT), Bluetooth, second optical |
@@ -68,12 +68,14 @@ Addresses and identifiers of the real installation are intentionally left out.
 - **One volume stage for music and cinema**: both sources reach the Phantom through the
   S/PDIF switch, so the Phantom's volume (driven by LMS through the volume bridge) is the
   volume of everything, including films.
-- **Master control**: the Hue Tap Dial (planned) controls volume and mute of every source
-  through LMS; play/pause targets the music when it plays, otherwise the Shield when it
-  is awake ("TV on = film"); previous/next are music-only and never start music during a
-  film. The Shield is only contacted on a button press and never woken up.
+- **Master control: the Shield remote**. Its keys are read over network ADB (read-only,
+  also while the Shield sleeps) by `shield_remote.py`: volume keys change the LMS volume,
+  hence the Phantom's, for every source; play/pause, fast forward and rewind drive the
+  music when it plays or when the TV is off, and are left to the film otherwise ("TV on =
+  film"). The Shield is set to fixed volume and never woken up. A Hue Tap Dial knob over
+  Zigbee (`tapdial.py`) is kept as an alternative, not installed.
 - **Optical isolation**: extra hardware on the Pi (for instance a USB Zigbee coordinator
-  for the knob) cannot inject electrical noise into the speakers.
+  for the alternative knob) cannot inject electrical noise into the speakers.
 - During validation, Qobuz tracks in 16/44.1, 24/96 and 24/192 played through this chain.
 
 ## 2. Services on the Pi
@@ -83,7 +85,8 @@ Addresses and identifiers of the real installation are intentionally left out.
 | LMS + squeezelite | piCorePlayer | music server and player | piCorePlayer |
 | **QobuzConnectLMS** | this repo | player selectable in the Qobuz app (Qobuz Connect) | `/mnt/mmcblk0p2/qconnect-lms/start.sh` |
 | **Volume bridge** | DevialetLMSBridge | LMS player volume → Phantom volume | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh` (planned, see §5) |
-| **Tap Dial service** | DevialetLMSBridge | Hue Tap Dial knob → LMS commands | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh tapdial` (planned) |
+| **Shield remote service** | DevialetLMSBridge | Shield remote keys → LMS volume and music | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh remote` (planned) |
+| Tap Dial service | DevialetLMSBridge | alternative: Hue Tap Dial knob → LMS commands | `start.sh tapdial` (not installed) |
 
 Each project lives in its own folder on the persistent SD partition, with its own start /
 stop / status scripts, and logs in RAM (`/tmp/qconnect-lms/`,
@@ -100,20 +103,24 @@ Qobuz app ──Qobuz Connect──► QobuzConnectLMS ──JSON-RPC 9000──
                                   ▲                               │
                                   └── CLI 9090 events ────────────┤
                                                                   │ CLI 9090: prefset server volume
-Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS         ▼
-                            │                                volume bridge ──IP Control API──► Phantom
-                            │ network ADB (play/pause, only if awake)                            ▲
-                            ▼                                                                    │
-                      NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV                  │
-                                                   └──optical──► S/PDIF switch (auto) ──optical──┘
+Shield remote ──Bluetooth──► NVIDIA Shield                        ▼
+                                  │                         volume bridge ──IP Control API──► Phantom
+                                  │ network ADB (getevent, read-only)                            ▲
+                                  ▼                                                              │
+                        shield_remote.py ──JSON-RPC 9000──► LMS                                  │
+                                                                                                 │
+NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV                                        │
+                             └──optical──► S/PDIF switch (auto) ──optical────────────────────────┘
+
+(alternative, not installed: Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS)
 ```
 
-- **Everything goes through LMS.** QobuzConnectLMS and the Tap Dial only send LMS
-  commands; they never talk to the Phantom. The volume bridge is the only component that
+- **Everything goes through LMS.** QobuzConnectLMS and the remote service only send
+  LMS commands; they never talk to the Phantom. The volume bridge is the only component that
   talks to the Phantom.
 - **Volume from the Qobuz app**: QobuzConnectLMS sets the LMS player volume
   (`mixer volume`); LMS emits `prefset server volume <n>`; the volume bridge forwards it
-  to the Phantom (capped). The app, LMS web UI, the knob and the Phantom stay in sync.
+  to the Phantom (capped). The app, LMS web UI, the remote and the Phantom stay in sync.
 - **Mute**: LMS stores a muted volume as a negative value; the bridge sets the Phantom
   to 0 and restores it on unmute.
 - **LMS CLI (9090)** is used by several clients at once, each on its own connection:
@@ -124,19 +131,19 @@ Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS  
 
 ## 4. Interactions to know
 
-- **Watching a film**: the knob's dial and mute act on the film too (same Phantom volume);
-  play/pause pauses the film when the Shield is awake and the music is not playing;
-  previous/next do nothing. Changing the volume from the Qobuz app or LMS web UI also
-  changes the film's volume.
-- **Shield asleep**: the knob behaves as a music remote; the Shield is not contacted for
-  volume or mute, and play/pause/previous/next only check its power state (read-only) —
-  that this check does not wake it is to be confirmed on the device.
-- **Shield remote volume**: today it changes the Shield's own output volume, not the
-  Phantom's, so in cinema mode the Phantom volume has to be set from the Devialet app
-  (or from LMS / the knob). Capturing the remote's volume keys is being studied.
+- **Watching a film**: the Shield remote's volume keys change the Phantom volume through
+  LMS; play/pause, fast forward and rewind act on the film (the Shield receives them
+  itself) while the music is not playing. Changing the volume from the Qobuz app or LMS
+  web UI also changes the film's volume.
+- **TV off (Shield asleep)**: the Shield remote is a music remote: volume, play/pause, next
+  (fast forward), previous (rewind). Measured: the keys are reported while the Shield
+  sleeps and the volume keys do not wake it; its power-state query does not wake it
+  either. That the media keys do not wake it is still to be confirmed.
+- **Other remote keys** (Home, Menu, Search, Power) keep their normal role and may wake
+  the Shield.
 - **Automatic switch**: starting music on the Pi during a film may make the switch select
-  the Pi; this is why previous/next are ignored and play/pause targets the Shield while
-  the TV is on.
+  the Pi; this is why fast forward / rewind act on the film, not on the music, while the TV
+  is on and the music is not playing.
 - **Startup volume**: the volume bridge sets LMS and the Phantom to its start volume
   (20 %) when it starts, including after a reboot. A Qobuz Connect session started just
   after boot therefore begins at that volume.
@@ -146,7 +153,9 @@ Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS  
 - **Gapless and events** (QobuzConnectLMS) only concern the LMS playlist and state; they
   have no effect on the volume path.
 - **Volume cap**: the Phantom never goes above the bridge's `max` (60), whatever the Qobuz
-  app or the knob asks.
+  app or the remote asks.
+- **Remote media keys** (play/pause, next, previous) act on the LMS player: during a
+  Qobuz Connect session, QobuzConnectLMS sees the LMS change through its events.
 
 ## 5. Status
 
@@ -154,5 +163,6 @@ Hue Tap Dial ──Zigbee──► tapdial.py ──JSON-RPC 9000──► LMS  
 |---|---|
 | QobuzConnectLMS (Qobuz Connect, gapless, LMS events) | Deployed and validated by listening, including after reboot |
 | Volume bridge | The first version (`phantom_bridge.py`) runs in production; the DevialetLMSBridge rewrite (split-line fix, mute, startup alignment) is tested but **not deployed yet** |
-| Shield (cinema) | Network debugging enabled, ADB key authorized, power state read successfully (read-only); cinema routing implemented and tested without the knob |
-| Hue Tap Dial service | Implemented and tested without hardware; **coordinator not purchased yet** (Sonoff ZBDongle-P USB or SMLIGHT SLZB-06 network) |
+| Shield (cinema) | HDMI fixed volume set, network debugging enabled, ADB key authorized; power state and remote keys read without waking it (measured) |
+| Shield remote service | Implemented and tested (fake device), `check` run against the real Shield; **not deployed yet** |
+| Hue Tap Dial service | Kept as an alternative: implemented and tested without hardware; coordinator purchase on hold |
