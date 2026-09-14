@@ -85,7 +85,7 @@ Addresses and identifiers of the real installation are intentionally left out.
 | LMS + squeezelite | piCorePlayer | music server and player | piCorePlayer |
 | **QobuzConnectLMS** | this repo | player selectable in the Qobuz app (Qobuz Connect) | `/mnt/mmcblk0p2/qconnect-lms/start.sh` |
 | **Volume bridge** | DevialetLMSBridge | LMS player volume → Phantom volume | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh` |
-| **Shield remote service** | DevialetLMSBridge | Shield remote keys → LMS volume and music | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh remote` |
+| **Shield remote service** | DevialetLMSBridge | Shield remote keys and Home Assistant (HTTP API) → LMS volume and music | `/mnt/mmcblk0p2/devialet-lms-bridge/start.sh remote` |
 | Tap Dial service | DevialetLMSBridge | alternative: Hue Tap Dial knob → LMS commands | `start.sh tapdial` (not installed) |
 
 Each project lives in its own folder on the persistent SD partition, with its own start /
