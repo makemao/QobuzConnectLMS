@@ -166,7 +166,7 @@ The protocol uses `Position { timestamp: fixed64, value: uint32 }`. The app inte
 4. **Queue does not advance**: another LMS controller changed the player's playlist (takeover → released on purpose), or LMS repeat re-enabled
 5. **Gap between tracks**: no `Gapless: queued next track in LMS` line (the Qobuz app sent no next track, the same track repeats, or foreign items follow the current one in the LMS playlist) — see DESIGN §4.5
 6. **Slow reaction to LMS-side changes**: no `Listening to LMS events` line (CLI port wrong, blocked, or `lms_cli_port: 0`) → polling mode
-7. **State not updating**: `_playback_monitor_loop` only polls when `_state == PlaybackState.PLAYING`
+7. **State not updating**: `_playback_monitor_loop` polls the backend while `PLAYING` (external pause) and `PAUSED` (external resume after `_PAUSED_PLAY_CONFIRMATIONS` polls, external stop after `_PAUSED_STOP_CONFIRMATIONS`); not while `STOPPED`
 8. **Protocol encoding**: Log values passed to `encode_state_update()` — binary issues are invisible otherwise
 
 ### Known Issues

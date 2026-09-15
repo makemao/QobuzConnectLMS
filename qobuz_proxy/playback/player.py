@@ -39,6 +39,9 @@ _HANDOFF_POSITION_THRESHOLD_MS = 5000
 # STOPPED polls (~0.5s each) before ending the listen — one bad poll must not
 # prematurely stop a normal paused track or lose its resume position.
 _PAUSED_STOP_CONFIRMATIONS = 3
+# While paused, a renderer resumed from elsewhere (e.g. another LMS controller or a
+# remote) is reported as playing once this many consecutive PLAYING polls agree.
+_PAUSED_PLAY_CONFIRMATIONS = 2
 
 # After a WebSocket reconnect, the Qobuz server replays its last-known session
 # snapshot via SET_STATE — typically PAUSED at a position from before the drop.
@@ -101,6 +104,8 @@ class QobuzPlayer:
 
         # Consecutive STOPPED polls seen while paused (external-stop detection).
         self._paused_stop_polls = 0
+        # Consecutive PLAYING polls seen while paused (external-resume detection).
+        self._paused_play_polls = 0
 
         # Playback command serialization. A track switch in the Qobuz app sends
         # a burst of SET_STATE messages; without this lock the resulting
@@ -1825,7 +1830,8 @@ class QobuzPlayer:
                         # Track finished naturally (handled by callback)
                         pass
                     elif backend_state == PlaybackState.PAUSED:
-                        # External pause (e.g., DLNA device)
+                        # External pause (e.g., DLNA device, another LMS controller)
+                        logger.info("Playback paused on the device, reporting to app")
                         self._state = PlaybackState.PAUSED
                         await self._send_state_update()
                         # Stop the played-time clock so this pause is excluded
@@ -1849,7 +1855,31 @@ class QobuzPlayer:
                     # Require consecutive STOPPED polls before trusting it —
                     # get_state() reports STOPPED on a transient read failure, and
                     # one bad poll must not end a normal paused listen.
-                    if await self.backend.get_state() == PlaybackState.STOPPED:
+                    backend_state = await self.backend.get_state()
+                    if self._state != PlaybackState.PAUSED:
+                        continue
+                    if backend_state == PlaybackState.PLAYING:
+                        self._paused_stop_polls = 0
+                        # Resumed on the device (e.g. play from another LMS controller).
+                        # An app resume holds the playback lock while it resumes the
+                        # backend: leave that one to the command.
+                        if self._playback_lock.locked():
+                            self._paused_play_polls = 0
+                            continue
+                        self._paused_play_polls += 1
+                        if self._paused_play_polls >= _PAUSED_PLAY_CONFIRMATIONS:
+                            self._paused_play_polls = 0
+                            position = await self.backend.get_position()
+                            if self._state != PlaybackState.PAUSED:
+                                continue
+                            logger.info("Playback resumed on the device, reporting to app")
+                            self._state = PlaybackState.PLAYING
+                            self._set_position(position)
+                            await self._send_state_update()
+                            await self._report_playing(self._position_value_ms)
+                        continue
+                    self._paused_play_polls = 0
+                    if backend_state == PlaybackState.STOPPED:
                         self._paused_stop_polls += 1
                         if self._paused_stop_polls >= _PAUSED_STOP_CONFIRMATIONS:
                             self._paused_stop_polls = 0
@@ -1867,6 +1897,7 @@ class QobuzPlayer:
 
                 else:
                     self._paused_stop_polls = 0
+                    self._paused_play_polls = 0
 
             except asyncio.CancelledError:
                 break

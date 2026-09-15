@@ -27,8 +27,8 @@ that adds an **`lms` backend**. The upstream DLNA and local-audio backends are k
   Qobuz app. **LMS change events** (CLI port 9090) make it react immediately to
   changes made on the LMS side (pause from another remote, track change) and avoid
   constant polling; without them it falls back to polling every second.
-- **Volume follows LMS**: a volume changed from another LMS controller (a remote, the
-  LMS web UI, Home Assistant) is reported to the Qobuz app, whose volume bar follows.
+- **Volume and pause follow LMS**: a volume change, a pause or a resume made from another
+  LMS controller (a remote, the LMS web UI, Home Assistant) is reported to the Qobuz app.
 - **Gapless**: the next track of the Qobuz queue is added to the LMS playlist in
   advance, so LMS chains tracks without a gap (live albums, classical, DJ mixes).
 - If you start something else on the player from LMS (a radio, your library...), the

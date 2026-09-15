@@ -219,6 +219,57 @@ class TestPlayerReporting:
         assert player.state == PlaybackState.PAUSED
         api.report_streaming_end.assert_not_awaited()
 
+    async def test_external_resume_while_paused_is_reported_after_confirmation(self) -> None:
+        """A renderer resumed from elsewhere (e.g. another LMS controller) while paused
+        must switch the player to PLAYING and tell the app, without a new start report."""
+        from qobuz_proxy.playback.player import _PAUSED_PLAY_CONFIRMATIONS
+
+        player, api = _make_player_with_reporter()
+        await player.play_track(queue_item_id=1, track_id="100")
+        await player.pause()
+        sent = []
+        player._send_state_update = AsyncMock(side_effect=lambda: sent.append(player.state))
+
+        player.backend.get_state = AsyncMock(return_value=PlaybackState.PLAYING)
+        player.backend.get_position = AsyncMock(return_value=42_000)
+        player._paused_play_polls = _PAUSED_PLAY_CONFIRMATIONS - 1
+
+        await self._run_monitor_briefly(player)
+
+        assert player.state == PlaybackState.PLAYING
+        assert sent and sent[0] == PlaybackState.PLAYING
+        assert player._position_value_ms >= 42_000
+        assert api.report_streaming_start.await_count == 1  # resume, not a new play
+        api.report_streaming_end.assert_not_awaited()
+
+    async def test_single_playing_poll_while_paused_does_not_resume(self) -> None:
+        """One PLAYING reading while paused is not enough to report a resume."""
+        player, api = _make_player_with_reporter()
+        await player.play_track(queue_item_id=1, track_id="100")
+        await player.pause()
+
+        player.backend.get_state = AsyncMock(return_value=PlaybackState.PLAYING)
+
+        await self._run_monitor_briefly(player)  # one poll only
+
+        assert player.state == PlaybackState.PAUSED
+
+    async def test_external_resume_is_left_to_an_app_command_in_progress(self) -> None:
+        """While an app command holds the playback lock (its resume is on the way),
+        the monitor must not report a resume of its own."""
+        from qobuz_proxy.playback.player import _PAUSED_PLAY_CONFIRMATIONS
+
+        player, api = _make_player_with_reporter()
+        await player.play_track(queue_item_id=1, track_id="100")
+        await player.pause()
+        player.backend.get_state = AsyncMock(return_value=PlaybackState.PLAYING)
+        player._paused_play_polls = _PAUSED_PLAY_CONFIRMATIONS - 1
+
+        async with player._playback_lock:
+            await self._run_monitor_briefly(player)
+
+        assert player.state == PlaybackState.PAUSED
+
     async def test_switching_track_reports_end_then_start(self) -> None:
         player, api = _make_player_with_reporter()
         await player.play_track(queue_item_id=1, track_id="100")

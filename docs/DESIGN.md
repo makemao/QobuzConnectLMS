@@ -222,6 +222,15 @@ Rules:
 
 Muted players report a negative `mixer volume`; `get_volume()` uses the absolute value.
 
+**Pause / resume from another LMS controller** (a remote, the LMS web UI): the
+player's monitor loop polls `get_state()` every 0.5 s. While `PLAYING`, a `PAUSED`
+backend switches the player to `PAUSED` and reports it; while `PAUSED`, a `PLAYING`
+backend confirmed by `_PAUSED_PLAY_CONFIRMATIONS` (2) consecutive polls switches it to
+`PLAYING`, reports the state and the resumed position to the app, and continues the
+play-report session (no new start). A resume is not reported while an app command holds
+the playback lock (the app's own resume is on the way). Found on the reference system:
+before this, a resume from a remote left the app showing paused while LMS played.
+
 **Volume changed outside the app** (another LMS controller: a remote, the LMS web UI,
 Home Assistant): the state loop compares the `mixer volume` of each status read with the
 last volume known to the app (`_known_volume`) and, when it differs, fires the backend's
