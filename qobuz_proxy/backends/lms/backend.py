@@ -46,6 +46,9 @@ REQUEST_TIMEOUT_SECONDS = 5.0
 STATUS_PLAYLIST_ITEMS = 10
 # A cleared next track stays in LMS this long in case the same track is re-armed
 REARM_GRACE_SECONDS = 2.0
+# After the app sets the volume, status reads that started earlier may still carry the
+# previous value: ignore volume differences this long so the app slider does not jump back
+APP_VOLUME_GRACE_SECONDS = 1.0
 # LMS CLI (events) reconnection backoff
 EVENTS_RECONNECT_MIN_SECONDS = 2.0
 EVENTS_RECONNECT_MAX_SECONDS = 60.0
@@ -96,6 +99,11 @@ class LMSBackend(AudioBackend):
         self._playback_started_at = 0.0
         self._status: dict[str, Any] = {}
         self._status_at = 0.0
+        # Last LMS volume known to the app (None until first seen), for changes made
+        # from another LMS controller; a mixer event asks for a check even when idle
+        self._known_volume: Optional[int] = None
+        self._volume_set_at = 0.0
+        self._volume_event = False
 
     # =========================================================================
     # JSON-RPC
@@ -287,6 +295,8 @@ class LMSBackend(AudioBackend):
         if len(tokens) < 2 or urllib.parse.unquote(tokens[0]) != self._player_id:
             return  # subscribe echo, or another player
         logger.debug(f"LMS event: {' '.join(urllib.parse.unquote(t) for t in tokens[1:3])}")
+        if tokens[1] == "mixer":
+            self._volume_event = True
         self._invalidate_status()
         self._wake.set()
 
@@ -372,6 +382,27 @@ class LMSBackend(AudioBackend):
         level = max(0, min(100, level))
         await self._request(["mixer", "volume", str(level)])
         self._volume = level
+        self._known_volume = level  # set by the app: not a change to report back
+        self._volume_set_at = time.monotonic()
+
+    @staticmethod
+    def _status_volume(status: dict[str, Any]) -> Optional[int]:
+        """Volume for the app from a status read: 0 while muted (negative in LMS)."""
+        try:
+            volume = int(float(status["mixer volume"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return 0 if volume < 0 else min(100, volume)
+
+    def _check_volume(self, status: dict[str, Any]) -> None:
+        """Report a volume changed from another LMS controller (remote, LMS web UI...)."""
+        volume = self._status_volume(status)
+        if volume is None or time.monotonic() - self._volume_set_at < APP_VOLUME_GRACE_SECONDS:
+            return
+        if self._known_volume is not None and volume != self._known_volume:
+            logger.info(f"LMS volume changed outside the app: {volume}")
+            self._notify_volume_change(volume)
+        self._known_volume = volume
 
     async def get_volume(self) -> int:
         try:
@@ -522,9 +553,14 @@ class LMSBackend(AudioBackend):
             try:
                 await self._wait_for_wake()
                 if not self._current_url:
+                    if self._volume_event:  # idle: volume only, on an LMS mixer event
+                        self._volume_event = False
+                        self._check_volume(await self._player_status(fresh=True))
                     continue
 
                 status = await self._player_status(fresh=True)
+                self._volume_event = False
+                self._check_volume(status)
                 now = time.monotonic()
                 in_grace = now - self._playback_started_at < PLAYBACK_START_GRACE_PERIOD_SECONDS
                 playing_url = self._status_url(status)

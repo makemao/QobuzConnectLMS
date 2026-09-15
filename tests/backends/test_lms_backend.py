@@ -127,6 +127,7 @@ async def lms(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(lms_module, "STATUS_CACHE_SECONDS", 0.0)
     monkeypatch.setattr(lms_module, "REARM_GRACE_SECONDS", 0.2)
     monkeypatch.setattr(lms_module, "EVENTS_RECONNECT_MIN_SECONDS", 0.1)
+    monkeypatch.setattr(lms_module, "APP_VOLUME_GRACE_SECONDS", 0.2)
     fake = FakeLMS()
     app = web.Application()
     app.router.add_post("/jsonrpc.js", fake.handle)
@@ -505,4 +506,70 @@ async def test_losing_events_falls_back_to_polling_then_reconnects(
     await _wait_for(lambda: ended, timeout=1.0)
 
     await _wait_for(lambda: backend._events_connected and len(fake.subscriptions) == 2)
+    await backend.disconnect()
+
+
+# =============================================================================
+# Volume changed outside the app
+# =============================================================================
+
+
+async def test_volume_changed_on_lms_is_reported_while_playing(lms) -> None:
+    fake, server = lms
+    backend = await _connected(server)
+    changes: list[int] = []
+    backend.on_volume_change(changes.append)
+    await backend.play("", _meta("1"))
+    await asyncio.sleep(0.15)  # first read only records the volume
+    assert changes == []
+    fake.volume = 46  # changed by another LMS controller (remote, web UI)
+    await _wait_for(lambda: changes == [46])
+    fake.volume = -46  # muted in LMS
+    await _wait_for(lambda: changes == [46, 0])
+    await backend.disconnect()
+
+
+async def test_volume_set_from_the_app_is_not_reported_back(lms) -> None:
+    fake, server = lms
+    backend = await _connected(server)
+    changes: list[int] = []
+    backend.on_volume_change(changes.append)
+    await backend.play("", _meta("1"))
+    await asyncio.sleep(0.15)
+    await backend.set_volume(55)
+    await asyncio.sleep(0.3)
+    assert changes == []
+    await backend.disconnect()
+
+
+async def test_mixer_event_reports_volume_while_idle(lms, slow_polling) -> None:
+    fake, server = lms
+    backend = await _connected_with_events(fake, server)
+    changes: list[int] = []
+    backend.on_volume_change(changes.append)
+    fake.volume = 30
+    await fake.notify("mixer", "volume", "30")  # first seen: recorded, not reported
+    await asyncio.sleep(0.3)
+    before = fake.status_requests
+    fake.volume = 36
+    await fake.notify("mixer", "volume", "36")
+    await _wait_for(lambda: changes == [36], timeout=1.0)
+    await fake.notify("playlist", "newsong", "Other", "0")  # idle, not a mixer event
+    await asyncio.sleep(0.3)
+    assert fake.status_requests == before + 1  # only the mixer event read the status
+    await backend.disconnect()
+
+
+async def test_stale_volume_right_after_an_app_change_is_ignored(lms) -> None:
+    fake, server = lms
+    backend = await _connected(server)
+    changes: list[int] = []
+    backend.on_volume_change(changes.append)
+    await backend.play("", _meta("1"))
+    await asyncio.sleep(0.15)
+    await backend.set_volume(55)
+    fake.volume = 54  # a read that raced the app change
+    await asyncio.sleep(0.1)  # within the grace period
+    assert changes == []
+    await _wait_for(lambda: changes == [54])  # still a real difference afterwards
     await backend.disconnect()

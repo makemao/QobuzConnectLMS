@@ -158,6 +158,7 @@ class QobuzPlayer:
         self.backend.on_playback_error(self._on_playback_error)
         self.backend.on_position_update(self._on_position_update)
         self.backend.on_next_track_started(self._on_next_track_started)
+        self.backend.on_volume_change(self._on_backend_volume_change)
 
         logger.info("QobuzPlayer initialized")
 
@@ -320,6 +321,14 @@ class QobuzPlayer:
             await self._volume_report_callback(self._volume)
         except Exception as e:
             logger.error(f"Failed to report volume change: {e}")
+
+    def _on_backend_volume_change(self, volume: int) -> None:
+        """Volume changed on the device side (e.g. another LMS controller): tell the app."""
+        if self._fixed_volume or volume == self._volume:
+            return
+        self._volume = volume
+        logger.info(f"Volume changed on the device: {volume}, reporting to app")
+        asyncio.create_task(self._report_volume_change())
 
     async def broadcast_current_volume(self) -> None:
         """Refresh volume from the backend and re-emit it to the controller.

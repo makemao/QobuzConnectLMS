@@ -428,3 +428,38 @@ class TestRepeatOneNaturalEnd:
         await player._restart_current_track(ended_track)
 
         backend.play.assert_not_awaited()
+
+
+class TestVolumeChangedOnDevice:
+    """A volume changed outside the app (e.g. another LMS controller) is reported to the app."""
+
+    async def test_reports_new_volume_once(self):
+        player, backend = _make_player()
+        reports: list[int] = []
+
+        async def report(volume: int) -> None:
+            reports.append(volume)
+
+        player.set_volume_report_callback(report)
+        player._volume = 40
+        player._on_backend_volume_change(46)
+        player._on_backend_volume_change(46)  # same value: no second report
+        await asyncio.sleep(0)
+        assert reports == [46] and player._volume == 46
+
+    async def test_backend_callback_is_wired(self):
+        player, backend = _make_player()
+        backend.on_volume_change.assert_called_once_with(player._on_backend_volume_change)
+
+    async def test_fixed_volume_mode_ignores_device_changes(self):
+        player, backend = _make_player()
+        reports: list[int] = []
+
+        async def report(volume: int) -> None:
+            reports.append(volume)
+
+        player.set_volume_report_callback(report)
+        player.set_fixed_volume_mode(True)
+        player._on_backend_volume_change(10)
+        await asyncio.sleep(0)
+        assert reports == []

@@ -220,7 +220,23 @@ Rules:
 | `pause` | `PAUSED` |
 | `stop` / unknown | `STOPPED` |
 
-Muted players report a negative `mixer volume`; the absolute value is used.
+Muted players report a negative `mixer volume`; `get_volume()` uses the absolute value.
+
+**Volume changed outside the app** (another LMS controller: a remote, the LMS web UI,
+Home Assistant): the state loop compares the `mixer volume` of each status read with the
+last volume known to the app (`_known_volume`) and, when it differs, fires the backend's
+`volume_change` callback; `QobuzPlayer._on_backend_volume_change` updates its cached
+volume and sends `RNDR_SRVR_VOLUME_CHANGED`, the message already used after an app
+change, so the app's volume bar follows.
+
+- While the player is idle (no Qobuz track owned) the loop does not read the status; an
+  LMS `mixer` CLI event still triggers one read for the volume.
+- Muted (negative) is reported as 0; unmuting reports the restored volume.
+- A volume set by the app becomes the known volume (no echo), and differences seen in the
+  following `APP_VOLUME_GRACE_SECONDS` (1 s) are ignored: a status read that started
+  before the app change would otherwise make the app slider jump back.
+- The first volume seen after start is recorded, not reported; the player dedupes equal
+  values and ignores device changes in fixed-volume mode.
 
 ### 4.7 Errors
 
@@ -269,6 +285,9 @@ Changes outside the backend are mechanical and follow upstream's patterns for th
 - takeover releases the player without `track_ended`, and a later `stop()` does not
   stop LMS;
 - pause/resume, seek/position, volume clamping and muted volume;
+- volume changed on LMS reported while playing (muted as 0), an app change not
+  reported back, a stale value right after an app change ignored, a `mixer` event
+  reporting while idle and other events not reading the status;
 - gapless: next track queued once; transition reported without `track_ended` and
   finished track removed; natural end after the last chained track; clearing after LMS
   already moved on keeps playing and ownership; no arming for a repeated track or with
@@ -302,7 +321,6 @@ app produced no message for the renderer, neither a dedicated one (the protocol 
 
 
 - LMS authentication (HTTP basic auth on JSON-RPC, `login` on the CLI).
-- Report volume changes made from LMS to the Qobuz app (`mixer volume` events).
 - Add LMS player discovery to the web UI "Add speaker" form.
 - piCorePlayer: installed as a self-contained folder with start/stop scripts
   (`contrib/picoreplayer/`); a native `.tcz` extension would integrate with the web UI.

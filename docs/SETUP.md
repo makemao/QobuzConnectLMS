@@ -120,7 +120,10 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
   talks to the Phantom.
 - **Volume from the Qobuz app**: QobuzConnectLMS sets the LMS player volume
   (`mixer volume`); LMS emits `prefset server volume <n>`; the volume bridge forwards it
-  to the Phantom (capped). The app, LMS web UI, the remote and the Phantom stay in sync.
+  to the Phantom (capped). The other way round, a volume changed from the Shield
+  remote, the Tap Dial or the LMS web UI is reported by QobuzConnectLMS to the Qobuz
+  app (volume bar follows, 0 while muted). Only a volume changed on the Phantom
+  itself (Devialet app) is not followed, by LMS or by the app.
 - **Mute**: LMS stores a muted volume as a negative value; the bridge sets the Phantom
   to 0 and restores it on unmute (LMS web UI, Shield remote microphone, Tap Dial).
 - **LMS CLI (9090)** is used by several clients at once, each on its own connection:

@@ -24,6 +24,7 @@ BufferStatusCallback = Callable[[BufferStatus], None]
 TrackEndedCallback = Callable[[], None]
 PlaybackErrorCallback = Callable[[str], None]  # error_message
 NextTrackStartedCallback = Callable[[], None]
+VolumeChangeCallback = Callable[[int], None]  # volume 0-100, changed outside the app
 
 
 class AudioBackend(ABC):
@@ -54,6 +55,7 @@ class AudioBackend(ABC):
         self._on_track_ended: Optional[TrackEndedCallback] = None
         self._on_playback_error: Optional[PlaybackErrorCallback] = None
         self._on_next_track_started: Optional[NextTrackStartedCallback] = None
+        self._on_volume_change: Optional[VolumeChangeCallback] = None
 
     # =========================================================================
     # Playback Control - Required
@@ -180,6 +182,10 @@ class AudioBackend(ABC):
     # Event Callbacks
     # =========================================================================
 
+    def on_volume_change(self, callback: Optional[VolumeChangeCallback]) -> None:
+        """Register callback for volume changes made outside the app (e.g. on the LMS side)."""
+        self._on_volume_change = callback
+
     def on_state_change(self, callback: Optional[StateChangeCallback]) -> None:
         """Register callback for state changes."""
         self._on_state_change = callback
@@ -245,6 +251,14 @@ class AudioBackend(ABC):
                 self._on_playback_error(message)
             except Exception as e:
                 logger.error(f"Playback error callback error: {e}")
+
+    def _notify_volume_change(self, volume: int) -> None:
+        """Notify listeners that the device volume changed outside the app."""
+        if self._on_volume_change:
+            try:
+                self._on_volume_change(volume)
+            except Exception as e:
+                logger.error(f"Volume change callback error: {e}")
 
     def _notify_next_track_started(self) -> None:
         """Notify listeners that a gapless transition to the next track occurred."""
