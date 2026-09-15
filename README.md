@@ -154,6 +154,8 @@ what your player supports.
 - Gapless is skipped when the same track is queued twice in a row (it is restarted
   normally instead) or when other items follow the current one in the LMS playlist.
 - LMS password protection is not supported.
+- Mute in the Qobuz app has no effect: the Qobuz Connect server does not send it to
+  devices (checked with debug logs: only volume changes arrive). Mute from LMS instead.
 - LMS player groups/sync are driven by LMS: pick the group's master player.
 
 ## Development

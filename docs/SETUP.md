@@ -122,7 +122,7 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
   (`mixer volume`); LMS emits `prefset server volume <n>`; the volume bridge forwards it
   to the Phantom (capped). The app, LMS web UI, the remote and the Phantom stay in sync.
 - **Mute**: LMS stores a muted volume as a negative value; the bridge sets the Phantom
-  to 0 and restores it on unmute.
+  to 0 and restores it on unmute (LMS web UI, Shield remote microphone, Tap Dial).
 - **LMS CLI (9090)** is used by several clients at once, each on its own connection:
   QobuzConnectLMS subscribes to `playlist,pause,mixer,client` events, the volume bridge to
   `prefset`. Subscriptions are per connection and do not interfere.
@@ -154,6 +154,11 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
   regardless of the source.
 - **Gapless and events** (QobuzConnectLMS) only concern the LMS playlist and state; they
   have no effect on the volume path.
+- **Mute from the Qobuz app does not work** (limitation of Qobuz Connect, measured
+  2026-09-15): with QobuzConnectLMS in debug mode, pressing mute / unmute in the app
+  delivered nothing to the device (only volume and pause messages, no unknown message,
+  no volume 0). The protocol has an app → server mute message, but no server → device
+  one. Mute with the Shield remote (microphone), the Tap Dial (button 4) or the LMS web UI.
 - **Volume cap**: the Phantom never goes above the bridge's `max` (60), whatever the Qobuz
   app or the remote asks.
 - **Remote media keys** (play/pause, next, previous) act on the LMS player: during a
@@ -166,7 +171,7 @@ NVIDIA Shield ──HDMI──► HDMI audio extractor ──HDMI──► TV   
 | Component | Status |
 |---|---|
 | QobuzConnectLMS (Qobuz Connect, gapless, LMS events) | Deployed and validated by listening, including after reboot |
-| Volume bridge | **Deployed and validated** (replaces the first `phantom_bridge.py`, kept on the Pi as a fallback): split-line fix, mute, startup alignment of LMS and the Phantom to 20 %; restarts on its own after a reboot. Mute from the Qobuz app still to be checked |
+| Volume bridge | **Deployed and validated** (replaces the first `phantom_bridge.py`, kept on the Pi as a fallback): split-line fix, mute, startup alignment of LMS and the Phantom to 20 %; restarts on its own after a reboot. Mute from the Qobuz app is not delivered to Qobuz Connect devices (see §4) |
 | Shield (cinema) | HDMI fixed volume set, network debugging enabled, ADB key authorized; power state and remote keys read without waking it (measured) |
 | Shield remote service | **Deployed and validated by use**: volume (music and film), play/pause on the film, rewind, double rewind → FIP favorite, microphone mute and volume while muted; restarts on its own after a reboot (connected to the Shield about 1 min after boot). First use showed a network connection to the Shield that hung without closing: fixed with a heartbeat, and volume up made safe (cap, repeat limit, steps from the Phantom's real volume) |
 | Hue Tap Dial | **Working through Home Assistant**: paired with ZHA (TI CC2652 coordinator) on a separate Home Assistant host; an automation on its `zha_event` calls the remote service HTTP API (`rest_command`), validated by use (volume, mute, play/pause). `tapdial.py` (own Zigbee stack) is not used |

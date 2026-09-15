@@ -294,6 +294,13 @@ deferred removal (no repeated re-queueing, playlist stays `[current, next]`).
 
 ## 8. Future work
 
+Known limitation: the app's mute button is not delivered to the device. Captured with
+`QOBUZPROXY_LOG_LEVEL=DEBUG` on the reference system (2026-09-15): mute and unmute in the
+app produced no message for the renderer, neither a dedicated one (the protocol only has
+`CTRL_SRVR_MUTE_VOLUME`, app → server, and `SRVR_CTRL_VOLUME_MUTED`, server → apps) nor
+`SRVR_RNDR_SET_VOLUME 0`, and no unhandled message type. Nothing to map on the LMS side.
+
+
 - LMS authentication (HTTP basic auth on JSON-RPC, `login` on the CLI).
 - Report volume changes made from LMS to the Qobuz app (`mixer volume` events).
 - Add LMS player discovery to the web UI "Add speaker" form.

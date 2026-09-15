@@ -169,6 +169,8 @@ The protocol uses `Position { timestamp: fixed64, value: uint32 }`. The app inte
 
 ### Known Issues
 
+**Mute in the Qobuz app does nothing**: the server does not forward it to renderers (verified with debug logs: no message reaches the device). Not fixable in the proxy.
+
 **Qobuz app shows wrong quality** (upstream FR-DLNA-08): App always displays "Hi-Res 96k" regardless of actual streaming quality.
 
 ## Docker
